@@ -432,7 +432,6 @@ bas.glm <- function(formula, family = binomial(link = "logit"),
   if (!GROW & method == "MCMC") method <- "MCMC_OLD"
   if (!GROW & method == "BAS") method <- "BAS_OLD"
   
-  # Still need to adjust to 2^(k+ sum_j Lj) as in García-Donato and Paulo (2022)
   if (is.null(n.models)) {
     n.models <- min(2^p, 2^16) # # change to 2^p to force enumeration regardless p
     if (method == "MCMC")  n.models = min(n.models, n.models.init) 
@@ -671,6 +670,8 @@ bas.glm <- function(formula, family = binomial(link = "logit"),
     if (!renormalize) { # If false, we base posterior probabilities on relative frequencies from MCMC
       result$probne0 <- result$probne0.MCMC # empirical posterior inclusion probabilities
       result$postprobs <- result$postprobs.MCMC #  empirical posterior model probabilities, computed as relative frequencies.
+    }
+
   }
 
   class(result) <- c("basglm", "bas")
