@@ -39,12 +39,12 @@
 #' @family bas methods
 #' @export
 diagnostics <- function(obj, type = c("pip", "model"), ...) {
-  if (obj$call$method == "MCMC") {
+  if (obj$call$method == "MCMC" || obj$call$method == "Gibbs" || obj$call$method == "GibbsBVS") {
     for (i in 1:length(type)) {
       if (type[i] == "pip") {
         plot(obj$probne0.RN, obj$probne0.MCMC,
           xlab = "pip (renormalized)",
-          ylab = "pip (MCMC)", xlim = c(0, 1), ylim = c(0, 1),
+          ylab = "pip (MCMC frequencies)", xlim = c(0, 1), ylim = c(0, 1),
           main = "Convergence Plot: Posterior Inclusion Probabilities",
           ...
         )
@@ -54,7 +54,7 @@ diagnostics <- function(obj, type = c("pip", "model"), ...) {
         ax.lim <- range(pretty(c(obj$postprobs.RN, obj$postprobs.MCMC)))
         plot(obj$postprobs.RN, obj$postprobs.MCMC,
           xlab = "p(M | Y) (renormalized)",
-          ylab = "p(M | Y) (MCMC)", xlim = ax.lim, ylim = ax.lim,
+          ylab = "p(M | Y) (MCMC frequencies)", xlim = ax.lim, ylim = ax.lim,
           main = "Convergence Plot: Posterior Model Probabilities",
           ...
         )
@@ -63,7 +63,7 @@ diagnostics <- function(obj, type = c("pip", "model"), ...) {
     }
   }
   else {
-    stop("Diagnostic plots are only availble using method='MCMC'
+    stop("Diagnostic plots are only availble using methods = c('MCMC','Gibbs','GibbsBVS')
                     for sampling with bas. Please rerun.")
   }
 }

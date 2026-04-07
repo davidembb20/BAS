@@ -5,6 +5,7 @@
 //
 #include "bas.h"
 
+// problocal: probability of using the random swap proposal...
 double GetNextModelCandidate(int pmodel_old, int n, int n_sure, int *model, struct Var *vars, double problocal,
                              int *varin, int *varout, SEXP Rparents) {
   double MH = 1.0;
