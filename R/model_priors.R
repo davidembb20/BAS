@@ -95,7 +95,47 @@ beta.binomial <- function(alpha = 1.0, beta = 1.0) {
   )
 }
 
+#' ------------------------------------------------
+#' New Model Space Priors
+#' ------------------------------------------------
 
+SBSB <- function() {
+  structure(list(family = "SBSB", hyper.parameters = numeric(0)), class = "prior")
+}
+SBC <- function() {
+  structure(list(family = "SBC", hyper.parameters = numeric(0)), class = "prior")
+}
+CC <- function() {
+  structure(list(family = "CC", hyper.parameters = numeric(0)), class = "prior")
+}
+Constant <- function() {
+  structure(list(family = "Uniform", hyper.parameters = numeric(0)), class = "prior")
+}
+SB <- function() {
+  structure(list(family = "SB", hyper.parameters = numeric(0)), class = "prior")
+}   
+
+#' ------------------------------------------------
+#' Cost-Penalized Priors
+#' ------------------------------------------------
+
+FND <- function (b = 1.0) {
+  structure(list(family = "FND", hyper.parameters = b), class = "prior")
+}
+# b controls the cost penalization of each variable
+# b = 0 -> no cost penalization
+# b < 1 -> cost penalization for each variable is smaller than that of the generalized BIC
+# b = 1 -> cost penalization for each variable is equal to that of the generalized BIC
+# b > 1 -> cost penalization for each variable is greater than that of the generalized BIC
+
+# To deal with factors
+FNDConst <- function (b = 1.0) {
+  structure(list(family = "FNDConst", hyper.parameters = b), class = "prior")
+}
+
+FNDSB <- function (b = 1.0) {
+  structure(list(family = "FNDSB", hyper.parameters = b), class = "prior")
+}
 
 
 #' Truncated Beta-Binomial Prior Distribution for Models
