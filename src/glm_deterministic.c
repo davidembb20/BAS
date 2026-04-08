@@ -182,6 +182,7 @@ SEXP glm_deterministic(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 
 		SetModel_glm(glm_fit, Rmodel_m, beta, se, modelspace, deviance, R2, Q, Rintercept,
                  prior_m, sampleprobs, logmarg, shrinkage, priorprobs, m);
+		UNPROTECT(2);
 
 		REAL(sampleprobs)[m] = pigamma;
 		

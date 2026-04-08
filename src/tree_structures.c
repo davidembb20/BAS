@@ -96,7 +96,7 @@ int sortvars(struct Var *vars, double *prob, int p)
 			vars[i].flip = TRUE;
 			n++;
 		}
-		else if (vars[i].prob < 1.0) {
+		else if (vars[i].prob < 1.0) { /* The case of uniform initprobs */
 			vars[i].leaveout = FALSE;
 			vars[i].logit = log((vars[i].prob)/(1.0-vars[i].prob));
 			vars[i].flip = FALSE;
@@ -134,7 +134,7 @@ int compare(struct Var *i, struct Var *j)
     return (-1);
   if (i->logit < j->logit)
     return (1);
-  return (0);
+  return (0); /* if = (uniform initprobs), no changes are made */
 }
 
 
@@ -476,15 +476,35 @@ double got_parents(int *model, SEXP Rparents, int level, struct Var *var, int ns
   return(prob);
 }
 
-
+/* Returns a pointer of a vector (w/ active variables indices) */
 int *GetModel_m(SEXP Rmodel_m, int *model, int p) {
   int *model_m = INTEGER(Rmodel_m);
   for (int j = 0, l=0; j < p; j++) {
     if (model[j] == 1) {
-      model_m[l++] = j;
+      model_m[l++] = j; /* 1st stores and then increments */
     }
   }
   return model_m;
+}
+
+/* Added by David (used for the correction of the marginal likelihood / Bayes Factor computation):
+   Returns a pointer of a binary vector with 1´s for active variables 
+   (at the level of the dummies; != positionsx R object) */
+int *GetModel_all (int* model_m, int pmodel, int p) {
+  
+  int *model = (int *) R_alloc((p + 1), sizeof(int));  // R-managed memory
+
+  for (int i = 0; i <= p; i++) {
+    model[i] = 0; // Includes the intercept
+  }
+
+  // Set positions corresponding to active variables to 1
+  for (int i = 0; i < pmodel; i++) {
+    model[model_m[i]] = 1;
+  }
+
+  return model;
+
 }
 
 void CreateTree(NODEPTR branch, struct Var *vars, int *bestmodel,
@@ -542,29 +562,6 @@ double FitModel(SEXP Rcoef_m, SEXP Rse_m, double *XtY, double *XtX, int *model_m
   return R2_m;
 }
 
-// used with glm*
-void SetModel2(double logmargy, double shrinkage_m, double prior_m,
-               SEXP sampleprobs, SEXP logmarg, SEXP shrinkage, SEXP priorprobs, int m) {
-  REAL(sampleprobs)[m] = 0.0;
-  REAL(logmarg)[m] = logmargy;
-  REAL(shrinkage)[m] = shrinkage_m;
-  REAL(priorprobs)[m] = prior_m;
-}
-
-// used with glm_*.c
-void SetModel1(SEXP Rfit, SEXP Rmodel_m, SEXP beta, SEXP se, SEXP modelspace,
-               SEXP deviance, SEXP R2, SEXP Q, SEXP Rintercept, int m) {
-  
-  SET_ELEMENT(beta, m, getListElement(getListElement(Rfit, "fit"),"coefficients"));
-  SET_ELEMENT(se, m, getListElement(getListElement(Rfit, "fit"),"se"));
-  SET_ELEMENT(modelspace, m, Rmodel_m);
-  
-  REAL(R2)[m] = NA_REAL;
-  REAL(deviance)[m] = REAL(getListElement(getListElement(Rfit, "fit"),"deviance"))[0];
-  REAL(Q)[m] = REAL(getListElement(getListElement(Rfit, "lpy"),"Q"))[0];
-  REAL(Rintercept)[m] = REAL(getListElement(getListElement(Rfit, "lpy"),"intercept"))[0];
-}
-
 // used with glm_*.c
 void SetModel_glm(SEXP glm_fit, SEXP Rmodel_m, SEXP beta, SEXP se, SEXP modelspace,
                   SEXP deviance, SEXP R2, SEXP Q, SEXP Rintercept, 
@@ -586,9 +583,38 @@ void SetModel_glm(SEXP glm_fit, SEXP Rmodel_m, SEXP beta, SEXP se, SEXP modelspa
   REAL(deviance)[m] = REAL(getListElement(getListElement(glm_fit, "fit"),"deviance"))[0];
   REAL(Q)[m] = REAL(getListElement(getListElement(glm_fit, "lpy"),"Q"))[0];
   REAL(Rintercept)[m] = REAL(getListElement(getListElement(glm_fit, "lpy"),"intercept"))[0];
-  UNPROTECT(2);
+  
+  // David: Adjusted glm_*.c accordingly (If not, I would have trouble in glm_gibbs*.c)
+  // UNPROTECT(2); /* glm_fit and Rmodel_m */ 
+  
 }
 
+// used only with glm_gibbs*.c
+void SetModel_gibbs(int m,
+  double logmargy, double shrinkage_m, double prior_m,
+  SEXP logmarg, SEXP shrinkage, SEXP priorprobs, SEXP sampleprobs,
+  double deviance_m, double R2_m, double Q_m, double Rintercept_m,
+  SEXP deviance, SEXP R2, SEXP Q, SEXP Rintercept,
+  SEXP beta_m, SEXP se_m, SEXP modelspace_m,
+  SEXP beta, SEXP se, SEXP modelspace) {
+  
+REAL(logmarg)[m]     = logmargy;
+REAL(shrinkage)[m]   = shrinkage_m;
+
+REAL(priorprobs)[m] = prior_m;
+REAL(sampleprobs)[m] = 0.0;
+
+/*  SET_ELEMENT instead? */
+SET_VECTOR_ELT(beta, m, beta_m);
+SET_VECTOR_ELT(se, m, se_m);
+SET_VECTOR_ELT(modelspace, m, modelspace_m);
+
+REAL(R2)[m] = NA_REAL;
+REAL(deviance)[m] = deviance_m;
+REAL(Q)[m] = Q_m;
+REAL(Rintercept)[m] = Rintercept_m;
+
+}
 
 void SetModel_lm(double logmarg_m, double shrinkage_m, double prior_m, 
                  SEXP sampleprobs, SEXP Rlogmarg, SEXP shrinkage, SEXP priorprobs,
