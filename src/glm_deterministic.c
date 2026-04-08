@@ -4,7 +4,60 @@
 // SPDX-License-Identifier: GPL-3.0
 //
 #include "bas.h"
+#include <gsl/gsl_vector.h> // GSL-ADD 
+#include <gsl/gsl_matrix.h> // GSL-ADD 
 
+
+/* ---------- helpers: turn SEXPs into GSL objects ---------------------  */
+
+/* Converts an R logical / integer matrix (column-major) to a gsl_matrix
+   in row-major order.  (for positions)          */
+gsl_matrix * sexp_to_gsl_matrix(SEXP m)
+{
+    if (TYPEOF(m) != REALSXP && TYPEOF(m) != INTSXP)
+        error("'positions' and 'var.costs' must be integer or numeric matrices");
+
+    if (!isMatrix(m))
+        error("'m' must be a matrix");
+
+    int *dim = INTEGER(getAttrib(m, R_DimSymbol));
+    const int nrow = dim[0], ncol = dim[1];
+
+    gsl_matrix *M = gsl_matrix_alloc(nrow, ncol);
+
+    if (TYPEOF(m) == INTSXP) {
+        int *src = INTEGER(m);  // R matrix is column-major
+        for (int j = 0; j < ncol; ++j)
+            for (int i = 0; i < nrow; ++i)
+                gsl_matrix_set(M, i, j, (double)src[i + nrow * j]);
+    } else {  // REALSXP
+        double *src = REAL(m);
+        for (int j = 0; j < ncol; ++j)
+            for (int i = 0; i < nrow; ++i)
+                gsl_matrix_set(M, i, j, src[i + nrow * j]);
+    }
+
+    return M;
+}
+
+/* Converts an R integer / numeric vector to a gsl_vector (for levels)  */
+gsl_vector * sexp_to_gsl_vector (SEXP v) /* >>> GSL-ADD */
+{
+    if (TYPEOF(v) != INTSXP && TYPEOF(v) != REALSXP)
+        error("`levels' must be a numeric/integer vector");
+
+    const int len = LENGTH(v);
+    gsl_vector *g = gsl_vector_alloc(len);
+
+    if (TYPEOF(v) == INTSXP)
+        for (int i = 0; i < len; ++i)
+            gsl_vector_set(g, i, (double)INTEGER(v)[i]);
+    else
+        for (int i = 0; i < len; ++i)
+            gsl_vector_set(g, i, REAL(v)[i]);
+
+    return g;
+}
 
 
 int topk(Bit **models, double *prob, int k, struct Var *vars, int n, int p);
@@ -23,7 +76,9 @@ int withprob(double p);
 // [[register]]
 SEXP glm_deterministic(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 		       SEXP Rprobinit, SEXP Rmodeldim, SEXP modelprior, SEXP betaprior,
-		       SEXP family, SEXP Rcontrol, SEXP Rlaplace) {
+		       SEXP positions, SEXP levels, SEXP costs,
+			   SEXP family, SEXP Rcontrol, SEXP Rlaplace) {
+	
 	int nProtected = 0;
 	int nModels=LENGTH(Rmodeldim);
 
@@ -32,7 +87,17 @@ SEXP glm_deterministic(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 
 	betapriorptr *betapriorfamily;
 	betapriorfamily = make_betaprior_structure(betaprior, family);
-
+	
+	/* ----------------------------------------------------------------
+     * NEW: Convert R objects -> GSL
+     * ---------------------------------------------------------------*/
+	 gsl_matrix *POS = sexp_to_gsl_matrix (positions);      /* >>> GSL-ADD */
+	 gsl_vector *LVL = sexp_to_gsl_vector (levels);         /* >>> GSL-ADD */
+	 gsl_matrix *costs_mat = sexp_to_gsl_matrix (costs);    /* >>> GSL-ADD */
+ 
+	 int nofvars = LENGTH(levels); // Number of competing variables (excluding the intercept)
+	 int n_obs = LENGTH(Y); // Number of observations
+ 
 
 	//  Rprintf("Allocating Space for %d Models\n", nModels) ;
 	SEXP ANS = PROTECT(allocVector(VECSXP, 14)); ++nProtected;
@@ -66,9 +131,9 @@ SEXP glm_deterministic(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 ;
 	double *probs,shrinkage_m,logmargy;
 
-	//get dimsensions of all variables
-	int p = INTEGER(getAttrib(X,R_DimSymbol))[1];
-	int k = LENGTH(modelprobs);
+	//get dimensions of all variables
+	int p = INTEGER(getAttrib(X,R_DimSymbol))[1]; // includes the intercept
+	int k = LENGTH(modelprobs); // no of models to evaluate (including some with 0 prior probability)
 
 	struct Var *vars = (struct Var *) R_alloc(p, sizeof(struct Var)); // Info about the model variables.
 	probs =  REAL(Rprobs);
@@ -78,7 +143,9 @@ SEXP glm_deterministic(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 	int *model = (int *) R_alloc(p, sizeof(int));
 	memset(model, 0, p*sizeof(int));
 	
-	int noInclusionIs1 = no_prior_inclusion_is_1(p, probs);
+	// Counts how many variables (excluding the intercept) were forced in the model
+	// (and have a prior inclusion probability used for sampling purposes equal to 1)
+	// int noInclusionIs1 = no_prior_inclusion_is_1(p, probs);
 	k = topk(models, probs, k, vars, n, p);
 
 	/* now fit all top k models */
@@ -95,20 +162,33 @@ SEXP glm_deterministic(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 		INTEGER(modeldim)[m] = pmodel;
 
 		SEXP Rmodel_m =	PROTECT(allocVector(INTSXP,pmodel));
-		GetModel_m(Rmodel_m, model, p);
+		GetModel_m(Rmodel_m, model, p); // active variables indices
+		
+		// glm_fit: list with 2 lists: "fit" or "lpy"
 		//evaluate logmargy and shrinkage
 		SEXP glm_fit = PROTECT(glm_FitModel(X, Y, Rmodel_m, Roffset, Rweights,
-						    glmfamily, Rcontrol, Rlaplace,
-						    betapriorfamily));
-		double prior_m  = compute_prior_probs(model,pmodel,p, modelprior, noInclusionIs1);
+						    glmfamily, Rcontrol, Rlaplace, betapriorfamily, positions, levels));
+		
+		// Allocate a GSL vector of size p
+		gsl_vector *index = gsl_vector_alloc(p);
+		// Copy values from model to index
+		for (size_t i = 0; i < p; ++i) {
+			gsl_vector_set(index, i, (double)model[i]);
+		}
+
+		// double prior_m  = compute_prior_probs(model,pmodel,p, modelprior, noInclusionIs1);
+		double prior_m  = compute_prior_probs_enumeration(index, p, modelprior, POS, nofvars, LVL, costs_mat, n_obs);
+		gsl_vector_free(index);
 
 		SetModel_glm(glm_fit, Rmodel_m, beta, se, modelspace, deviance, R2, Q, Rintercept,
                  prior_m, sampleprobs, logmarg, shrinkage, priorprobs, m);
+
 		REAL(sampleprobs)[m] = pigamma;
+		
 	}
 
-	compute_modelprobs(modelprobs, logmarg, priorprobs, k);
-	compute_margprobs_old(models, modelprobs, probs, k, p);
+	compute_modelprobs(modelprobs, logmarg, priorprobs, k); // Posterior Model Probabilities
+	compute_margprobs_old(models, modelprobs, probs, k, p); // PIPs for each predictor (dummy and not factor level)
 
 	/*    freechmat(models,k); */
 	SET_VECTOR_ELT(ANS, 0, Rprobs);
@@ -157,6 +237,13 @@ SEXP glm_deterministic(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 	setAttrib(ANS, R_NamesSymbol, ANS_names);
 	UNPROTECT(nProtected);
 
+	 /* ---------------------------------------------------------------
+     *  Cleaning of the GSL objects before returning to R
+     * -------------------------------------------------------------- */
+	 gsl_matrix_free (POS);                                   /* >>> GSL-ADD */
+	 gsl_vector_free (LVL);                                   /* >>> GSL-ADD */
+	 gsl_matrix_free (costs_mat);                             /* >>> GSL-ADD */
+ 
 	return(ANS);
 
 }
