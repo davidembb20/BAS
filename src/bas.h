@@ -30,6 +30,14 @@
 #include <R_ext/Lapack.h>
 #include <R_ext/Linpack.h>
 
+/* Added by David */
+#include <gsl/gsl_sf_gamma.h>
+#include <gsl/gsl_vector.h>
+#include <gsl/gsl_matrix.h>
+#include <gsl/gsl_blas.h>
+#include <gsl/gsl_sf.h>
+
+
 /* Defines from R/include/Defn.h */
 NORET void UNIMPLEMENTED_TYPE(const char *s, SEXP x);
 NORET void UNIMPLEMENTED_TYPEt(const char *s, SEXPTYPE t);
@@ -83,14 +91,81 @@ typedef struct betapriorfamilystruc {
 
 betapriorptr * make_betaprior_structure(SEXP betaprior, SEXP glmfamily);
 
-/* Subroutines. */
+/* SUBROUTINES. */
+
+/* Added by David*/
+gsl_matrix *sexp_to_gsl_matrix(SEXP m);
+gsl_vector *sexp_to_gsl_vector(SEXP v);
+
+int *GetModel_all (int* model_m, int pmodel, int p);
+int model_rank (int *index, int p, gsl_matrix *positions, int nofvars, int *levels);
+double compute_prior_probs_MCMC (int * model, int p, SEXP modelprior,
+                                 gsl_matrix *positions, int nofvars,
+                                 gsl_vector *levels, gsl_matrix *costs, int n_obs);
+double compute_prior_probs_enumeration (gsl_vector *index, int p, SEXP modelprior,
+                                        gsl_matrix *positions, int nofvars, 
+                                        gsl_vector *levels, gsl_matrix *costs, int n_obs);
+                                        
+double prior_group (gsl_vector * index, gsl_matrix * positions, int nofvars, gsl_vector * levels,
+                    int p, double * b, gsl_matrix * costs, double c0, int n);
+int bernoulli_draw (double prob);
+void randperm (int *perm, int p);   
+
+// Model Prior functions for MCMC
+double SBSB_prior (gsl_vector * index, gsl_matrix * positions, int nofvars, gsl_vector * levels, int p);
+double SBC_prior (gsl_vector * index, gsl_matrix * positions, int nofvars, gsl_vector * levels, int p);
+double CC_prior (gsl_vector * index, gsl_matrix * positions, int nofvars, gsl_vector * levels, int p);
+double C_prior (int nofvars, gsl_vector * levels);
+double SB_prior (gsl_vector * index, gsl_matrix * positions, int nofvars, gsl_vector * levels, int p);
+double penalty_cost_func (double cost, double c0, double * b, char *cost_type);
+double FND_prior (gsl_vector * index, gsl_matrix * positions, int nofvars, gsl_vector * levels,
+int p, double * b, double * marginal_costs, double c0, int n);
+double FNDConst_prior (gsl_vector * index, gsl_matrix * positions, int nofvars, gsl_vector * levels,
+     int p, double * b, gsl_matrix * costs, double * marginal_costs, double c0, int n);
+double FNDSB_prior (gsl_vector * index, gsl_matrix * positions, int nofvars, gsl_vector * levels,
+  int p, double * b, gsl_matrix * costs, double * marginal_costs, double c0, int n);
+
+// Model Prior functions for Enumeration
+double Constant_prior (gsl_vector * index, gsl_matrix * positions, int nofvars, gsl_vector * levels, int p);
+double CC_enum_prior (gsl_vector * index, gsl_matrix * positions, int nofvars, gsl_vector * levels, int p);
+double SBC_enum_prior (gsl_vector * index, gsl_matrix * positions, int nofvars, gsl_vector * levels, int p);
+double SBSB_enum_prior (gsl_vector * index, gsl_matrix * positions, int nofvars, gsl_vector * levels, int p);
+double ScottBerger_prior (gsl_vector * index, gsl_matrix * positions, int nofvars, gsl_vector * levels, int p); 
+double my_choose (int l, int j);
+double *rank_levels (double * L, int m2); 
+double *rank_levels2 (double * arg, int nofvars, int len_out);
+double FND_enum_prior (gsl_vector * index, gsl_matrix * positions, int nofvars, gsl_vector * levels,
+     int p, double * b, double * marginal_costs, double c0, int n);
+double FNDConst_enum_prior (gsl_vector * index, gsl_matrix * positions, int nofvars, gsl_vector * levels,
+          int p, double * b, gsl_matrix * costs, double * marginal_costs, double c0, int n);
+double FNDSB_enum_prior (gsl_vector * index, gsl_matrix * positions, int nofvars, gsl_vector * levels,
+       int p, double * b, gsl_matrix * costs, double * marginal_costs, double c0, int n);
 
 double CalculateRSquareFull(double *XtY, double *XtX, double *XtXwork, double *XtYwork,
                             SEXP Rcoef_m, SEXP Rse_m, int p, int nobs, double yty, double SSY);
 int *GetModel_m(SEXP Rmodel_m, int *model, int p);
-void SetModel2(double logmargy, double shrinkage_m, double prior_m,
-               SEXP sampleprobs, SEXP logmarg, SEXP shrinkage, SEXP priorprobs, int m);
 
+void SetModel_gibbs(int m,
+  double logmargy, double shrinkage_m, double prior_m,
+  SEXP logmarg, SEXP shrinkage, SEXP priorprobs, SEXP sampleprobs,
+  double deviance_m, double R2_m, double Q_m, double Rintercept_m,
+  SEXP deviance, SEXP R2, SEXP Q, SEXP Rintercept,
+  SEXP beta_m, SEXP se_m, SEXP modelspace_m,
+  SEXP beta, SEXP se, SEXP modelspace);
+
+/* Changed by David*/
+double Bernoulli(gsl_vector *index, int p, double *hyper); /* int *model -> gsl_vector *index */
+double compute_prior_probs(int *model, int modeldim, int p, SEXP modelprior); /* In the future, might give a different name to this */
+// double compute_prior_probs(int *model, int modeldim, int p, SEXP modelprior, int noInclusionIs1); /* Old */ 
+SEXP glm_FitModel(SEXP RX, SEXP RY, SEXP Rmodel_m, //input data
+                  SEXP Roffset, SEXP Rweights, glmstptr * glmfamily, SEXP Rcontrol,
+                  SEXP Rlaplace, betapriorptr * betapriorfamily, SEXP positions, SEXP levels);
+SEXP gglm_lpy(SEXP RX, SEXP RY,SEXP Rcoef, SEXP Rmu, SEXP Rdeviance, SEXP Rweights,
+              glmstptr * glmfamily, betapriorptr * betapriorfamily, SEXP Rlaplace,
+              SEXP Rmodel_m, SEXP positions, SEXP levels);
+
+
+/* Same */
 void SetModel_glm(SEXP glm_fit, SEXP Rmodel_m, SEXP beta, SEXP se, SEXP modelspace,
                   SEXP deviance, SEXP R2, SEXP Q, SEXP Rintercept, 
                   double prior_m, SEXP sampleprobs, SEXP logmarg, SEXP shrinkage, SEXP priorprobs,
@@ -113,9 +188,8 @@ double beta_binomial(int modeldim, int p, double *hyper);
 double trunc_beta_binomial(int modeldim, int p, double *hyper);
 double trunc_poisson(int modeldim, int p, double *hyper);
 double trunc_power_prior(int modeldim, int p, double *hyper);
-double Bernoulli(int *model, int p, double *hyper);
+
 int no_prior_inclusion_is_1(int p, double *probs);
-double compute_prior_probs(int *model, int modeldim, int p, SEXP modelprior, int noInclusionIs1);
 void compute_margprobs_old(Bit **models, SEXP Rmodelprobs, double *margprobs, int k, int p);
 void compute_modelprobs(SEXP modelprobs, SEXP logmarg, SEXP priorprobs,  int k);
 void compute_modelprobs_Bayes_HT(SEXP Rmodelprobs,  SEXP Rlogmarg, SEXP Rpriorprobs, 
@@ -378,22 +452,11 @@ double GetNextModel_AMC(struct Var *vars,
                       double *Cov, double delta);
 void Substract_visited_probability_mass(NODEPTR branch, struct Var *vars, int *model, int n, int m, double *pigamma, double eps);
 
-void SetModel1(SEXP Rfit, SEXP Rmodel_m,
-               SEXP beta, SEXP se, SEXP modelspace, SEXP deviance, SEXP R2, SEXP Q, SEXP Rintercept, int m);
-
-void SetModel2(double logmargy, double shrinkage_m, double prior_m,
-               SEXP sampleprobs, SEXP logmarg, SEXP shrinkage, SEXP priorprobs, int m);
 double FitModel(SEXP Rcoef_m, SEXP Rse_m, double *XtY, double *XtX, int *model_m,
                 double *XtYwork, double *XtXwork, double yty, double SSY, int pmodel, int p,
                 int nobs, int m, double *pmse_m, int *rank_m, int pivot, double tol);
-SEXP glm_FitModel(SEXP RX, SEXP RY, SEXP Rmodel_m, //input data
-                  SEXP Roffset, SEXP Rweights,
-                  glmstptr * glmfamily, SEXP Rcontrol,
-                  SEXP Rlaplace, betapriorptr * betapriorfamily);
 
 SEXP glm_bas(SEXP RX, SEXP RY, glmstptr * family, SEXP Roffset, SEXP Rweights, SEXP Rcontrol);
-
-SEXP gglm_lpy(SEXP RX, SEXP RY,SEXP Rcoef, SEXP Rmu, SEXP Rdeviance, SEXP Rweights, glmstptr * glmfamily, betapriorptr * betapriorfamily, SEXP Rlaplace);
 
 SEXP resizeVector(SEXP x, R_xlen_t len);
 SEXP xlengthgets(SEXP x, R_xlen_t len);
