@@ -291,8 +291,8 @@ double compute_prior_probs(int *model, int modeldim, int p, SEXP modelprior, int
 }
 */
 
-/* I´m using this version, as changes need to be made in bas_glmFC.R 
-   This issue will be dealt with in the future                       */
+/* I´m using this version, as changes still need to be made in bas_glmFC.R.
+   This issue will be dealt with in the future                             */
 double compute_prior_probs(int *model, int modeldim, int p, SEXP modelprior) {
   const char *family;
   double *hyper_parameters, priorprob = 1.0;
@@ -401,121 +401,8 @@ double trunc_power_prior(int modeldim, int p, double *hyper) {
   return(prior);
 }
 
-// Copyright (c) 2024 Merlise Clyde and contributors to BAS. All rights reserved.
-// This work is licensed under a GNU GENERAL PUBLIC LICENSE Version 3.0
-// License text is available at https://www.gnu.org/licenses/gpl-3.0.html
-// SPDX-License-Identifier: GPL-3.0
-//
-#include "bas.h"
+/* ADDED by David */
 
-// Computes posterior model probabilities for each model
-void compute_modelprobs (SEXP Rmodelprobs,  SEXP Rlogmarg, SEXP Rpriorprobs, int k)
-{ // k stands for the number of models
-	int m;
-	double nc, bestmarg, *modelprobs, *logmarg, *priorprobs;
-
-  // They are passed as R objects (SEXP), but they are converted to C arrays
-	logmarg = REAL(Rlogmarg); //  Input Vector that contains the log marginal likelihoods
-	modelprobs = REAL(Rmodelprobs); //  Output Vector that will store the posterior model probabilities
-	priorprobs = REAL(Rpriorprobs); // Input Vector that contains the prior model probabilities
-
-	bestmarg = logmarg[0]; //  Initializing the best marginal likelihood to the first model
-	nc = 0.0; //  Initializing the normalization constant
-
-	for (m = 0; m < k; m++) { // Finds the maximum log marginal likelihood
-		if (logmarg[m] > bestmarg) bestmarg = logmarg[m];
-	}
-
-	for (m = 0; m < k; m++) {
-    modelprobs[m] = logmarg[m] - bestmarg; /* log (marg / max(marg)) 
-    it is basically the renormalized log marginal likelihoods */
-		nc += exp(modelprobs[m])*priorprobs[m]; // Denominator in Bayes Theorem for posterior model probabilities
-	}
-
-  /* When the entire model space is enumerated, this is the same thing as the original Bayes Theorem.
-     When it´s not, this was the way they found the make the normalizing constant comparable among different 
-     number of visited / sampled models. */
-
-	for (m = 0; m < k; m++) {
-    // From Bayes Theorem, we have that:
-	  /*		modelprobs[m] = exp(modelprobs[m]) +
-			log(priorprobs[m]) - log(nc)); */
-    /* David´s explanation (direct application of the theorem):
-       modelprobs[m] = exp(modelprobs[m])) * priorprobs[m] / nc; 
-    */
-		modelprobs[m] = exp(modelprobs[m] - log(nc))*priorprobs[m]; // Applying Bayes Theorem for posterior model probabilities computation
-	}
-}
-
-// Computes marginal inclusion probabilities for each predictor (for factors, this means at the level of the levels)
-// Input:
-//   modelspace   - a list (length k) of integer vectors (each vector = one model's variable indices) 
-//   modeldim     - integer vector (length k) giving the number of variables in each model (includes the intercept)
-//   Rmodelprobs  - numeric vector (length k) of posterior probabilities for each model
-//   margprobs    - (output) C array of length p, filled with marginal inclusion probabilities
-//   k            - number of models
-//   p            - number of total predictors
-void compute_margprobs (SEXP modelspace, SEXP modeldim, SEXP Rmodelprobs, 
-                        double *margprobs, int k, int p)
-{
-	int m, j, *model;
-	double *modelprobs;
-  // Convert the R object of model posterior probabilities to a C pointer
-	modelprobs = REAL(Rmodelprobs);
-  // Initialize the (output) C array of length p with marginal inclusion probabilities to 0
-	for (j=0; j < p; j++)  margprobs[j] = 0.0;
-
-  // Loop through all models
-	for(m=0; m< k; m++) {
-		model = INTEGER(VECTOR_ELT(modelspace, m)); // Get the model's variable indices
-		// modeldim[m] tells how many variables are in model m (including the intercept)
-    for (j = 0; j < INTEGER(modeldim)[m]; j ++) { // Loop through all variables in the model (model is a list of indices)
-			// Adding the Posterior Probabilities of this particular model to the PIP for the variable
-      margprobs[model[j]] += modelprobs[m]; // model[j] is index of the j-th variable in the model (this index will indeed correspond to a variable)
-		}
-	}
-
-}
-
-
-// Used in glm_deterministic.c
-// models is a (C 2D binary) matrix of 0/1 indicators of which variables are active in each model instead of a list of indices 
-// Arguments:
-//   models       - A 2D binary array (Bit**) of size [k x p]
-//                  where models[m][j] == 1 if variable j is in model m and p contains the intercept
-void compute_margprobs_old(Bit **models, SEXP Rmodelprobs, double *margprobs, int k, int p)
-{
-  int m, j;
-  double *modelprobs;
-  // Convert R vector to C array of posterior probabilities
-  modelprobs = REAL(Rmodelprobs);
-
-  // Loop through all variables
-  for (j=0; j< p; j++) {
-    margprobs[j] = 0.0; // Initialize the PIP for the variable to 0
-   for(m=0; m< k; m++) { // Loop through all models
-     if (models[m][j]) // If the variable is active in the model
-        margprobs[j] += modelprobs[m]; // Adding the Posterior Probabilities of this particular model to the PIP for the variable
-      }
-    }
-}
-
-// Returns the number of predictors (excluding the intercept) that have a prior inclusion probability (used for sampling) equal to 1
-// Essentially, this counts the number of forced variables (variables that are always included in the model), because we set their initial probability to 1
-int no_prior_inclusion_is_1(int p, double *probs) {
-
-  int noInclusionIs1 = 0; // Initialize the counter to 0
-  // loop starts from 1 since the intercept is corrected for in the model prior functions
-  for (int i = 1; i < p; i++) { 
-  	if (probs[i] > (1.0 - DBL_EPSILON)) { // If the prior inclusion probability is close to 1
-  		noInclusionIs1++; // Increment the counter
-  	}
-  }
-  return noInclusionIs1; // Returns the final count
-}
-
-
-/* Added / Modified by David */
 /*----------------------------------------------------------
  *  compute_prior_probs_MCMC()
  *
@@ -2002,7 +1889,6 @@ double prior_group (gsl_vector * index, gsl_matrix * positions, int nofvars,
   return log (priorprob);
 
 }
-
 
 double FNDConst_enum_prior (gsl_vector *index, gsl_matrix *positions, int nofvars, gsl_vector *levels,
                             int p, double *b, gsl_matrix *costs, double * marginal_costs, double c0, int n) 
