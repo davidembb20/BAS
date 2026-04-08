@@ -8,13 +8,22 @@
 
 SEXP glm_sampleworep_grow(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 		     SEXP Rprobinit, SEXP RnModels,
-		     SEXP modelprior, SEXP betaprior,SEXP Rbestmodel,  SEXP plocal,
+		     SEXP modelprior, SEXP betaprior,
+			 SEXP positions, SEXP levels, SEXP costs,
+			 SEXP Rbestmodel,  SEXP plocal,
 		     SEXP family, SEXP Rcontrol,
 		     SEXP Rupdate, SEXP Rlaplace, SEXP Rparents) {
 
 
   int nModels0 = INTEGER(RnModels)[0];  // initial guess on number of models to return
   int nUnique = nModels0;
+
+  /* ----------------------------------------------------------------
+  *  NEW: Convert R objects -> GSL
+  *  --------------------------------------------------------------- */
+  gsl_matrix *POS = sexp_to_gsl_matrix(positions);    /* >>> GSL-ADD */
+  gsl_vector *LVL = sexp_to_gsl_vector(levels);       /* >>> GSL-ADD */
+  gsl_matrix *costs_mat = sexp_to_gsl_matrix(costs);  /* >>> GSL-ADD */
 
 //	Rprintf("Allocating Space for %d Models\n", nModels0) ;
 
@@ -118,7 +127,7 @@ SEXP glm_sampleworep_grow(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 	struct Var *vars = (struct Var *) R_alloc(p, sizeof(struct Var)); // Info about the model variables.
 	probs =  REAL(Rprobs);
 	int n = sortvars(vars, probs, p);
-	int noInclusionIs1 = no_prior_inclusion_is_1(p, probs);
+	// int noInclusionIs1 = no_prior_inclusion_is_1(p, probs);
 
 	int *model = ivecalloc(p);
 	/* fill in the sure things */
@@ -151,20 +160,28 @@ SEXP glm_sampleworep_grow(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 	int pmodel = INTEGER(modeldim)[m];
 	SEXP Rmodel_m =	PROTECT(allocVector(INTSXP,pmodel));
 	GetModel_m(Rmodel_m, model, p);
+	
 	//evaluate logmargy and shrinkage
 	SEXP glm_fit = PROTECT(glm_FitModel(X, Y, Rmodel_m, Roffset, Rweights,
-					    glmfamily, Rcontrol, Rlaplace,
-					    betapriorfamily));
-	double prior_m  = compute_prior_probs(model,pmodel,p, modelprior, noInclusionIs1);
+						glmfamily, Rcontrol, Rlaplace,
+						betapriorfamily, positions, levels));
+
+	// Allocate a GSL vector of size p
+	gsl_vector *index = gsl_vector_alloc(p);
+	// Copy values from model to index
+	for (size_t i = 0; i < p; ++i) {
+		gsl_vector_set(index, i, (double)model[i]);
+	}
+
+	double prior_m  = compute_prior_probs_enumeration(index, p, modelprior, POS, nofvars, LVL, costs_mat, n_obs);
+	gsl_vector_free(index);
+
 	logmargy = REAL(getListElement(getListElement(glm_fit, "lpy"),"lpY"))[0];
-	shrinkage_m = REAL(getListElement(getListElement(glm_fit, "lpy"),
-					"shrinkage"))[0];
-//   Rprintf("SetModel_glm for initial model\n");
-//	SetModel2(logmargy, shrinkage_m, prior_m, sampleprobs, logmarg, shrinkage, priorprobs, m);
-//	SetModel1(glm_fit, Rmodel_m, beta, se, modelspace, deviance, R2, Q,Rintercept, m);
-	SetModel_glm(glm_fit, Rmodel_m, beta, se, modelspace, deviance, R2, Q,Rintercept, 
-              prior_m, sampleprobs, logmarg, shrinkage, priorprobs, m);
-//	UNPROTECT(2);
+	shrinkage_m = REAL(getListElement(getListElement(glm_fit, "lpy"), "shrinkage"))[0];
+
+	SetModel_glm(glm_fit, Rmodel_m, beta, se, modelspace, deviance, R2, Q, Rintercept, 
+	prior_m, sampleprobs, logmarg, shrinkage, priorprobs, m);
+	UNPROTECT(2);
 
 	int *modelwork= ivecalloc(p);
 
@@ -190,18 +207,25 @@ SEXP glm_sampleworep_grow(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 		GetModel_m(Rmodel_m, model, p);
 
 		glm_fit = PROTECT(glm_FitModel(X, Y, Rmodel_m, Roffset, Rweights,
-					       glmfamily, Rcontrol, Rlaplace,
-					       betapriorfamily));
-		prior_m = compute_prior_probs(model,pmodel,p, modelprior, noInclusionIs1);
-		logmargy = REAL(getListElement(getListElement(glm_fit, "lpy"),"lpY"))[0];
-		shrinkage_m = REAL(getListElement(getListElement(glm_fit, "lpy"),
-					"shrinkage"))[0];
+						glmfamily, Rcontrol, Rlaplace,
+						betapriorfamily, positions, levels));
 
-//		SetModel2(logmargy, shrinkage_m, prior_m, sampleprobs, logmarg, shrinkage, priorprobs, m);
-//		SetModel1(glm_fit, Rmodel_m, beta, se, modelspace, deviance, R2,Q,Rintercept, m);
-    SetModel_glm(glm_fit, Rmodel_m, beta, se, modelspace, deviance, R2, Q,Rintercept, 
-                 prior_m, sampleprobs, logmarg, shrinkage, priorprobs, m);
-//		UNPROTECT(2);
+		// Allocate a GSL vector of size p
+		gsl_vector *index = gsl_vector_alloc(p);
+		// Copy values from model to index
+		for (size_t i = 0; i < p; ++i) {
+			gsl_vector_set(index, i, (double)model[i]);
+		}
+
+		double prior_m  = compute_prior_probs_enumeration(index, p, modelprior, POS, nofvars, LVL, costs_mat, n_obs);
+		gsl_vector_free(index);
+
+		logmargy = REAL(getListElement(getListElement(glm_fit, "lpy"),"lpY"))[0];
+		shrinkage_m = REAL(getListElement(getListElement(glm_fit, "lpy"), "shrinkage"))[0];
+
+		SetModel_glm(glm_fit, Rmodel_m, beta, se, modelspace, deviance, R2, Q,Rintercept, 
+					 prior_m, sampleprobs, logmarg, shrinkage, priorprobs, m);
+		UNPROTECT(2);
 
 		REAL(sampleprobs)[m] = pigamma[0];
 
@@ -255,6 +279,10 @@ SEXP glm_sampleworep_grow(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 	
 	PutRNGstate();
 
+	gsl_matrix_free (costs_mat);  /* >>> GSL-ADD */
+	gsl_vector_free (LVL);        /* >>> GSL-ADD */
+	gsl_matrix_free (POS);        /* >>> GSL-ADD */
+	
 	UNPROTECT(nProtected);
 	return(ANS);
 }
