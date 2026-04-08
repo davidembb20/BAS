@@ -8,7 +8,9 @@
 // [[register]]
 SEXP glm_mcmcbas(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 		             SEXP Rprobinit, SEXP Rmodeldim,
-		             SEXP modelprior, SEXP betaprior, SEXP Rbestmodel, SEXP plocal,
+		             SEXP modelprior, SEXP betaprior,
+					 SEXP positions, SEXP levels, SEXP costs,
+					 SEXP Rbestmodel, SEXP plocal,
 		             SEXP BURNIN_Iterations, SEXP MCMC_Iterations,
 		             SEXP family, SEXP Rcontrol,
 		             SEXP Rupdate, SEXP Rlaplace, SEXP Rparents)
@@ -17,6 +19,15 @@ SEXP glm_mcmcbas(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
  // Rprintf("Starting MCMC +BAS\n");
 	int nProtected = 0;
 	int nModels=LENGTH(Rmodeldim);
+
+   /* ----------------------------------------------------------------
+    * NEW: Convert R objects -> GSL
+    * ---------------------------------------------------------------*/
+	gsl_matrix *POS = sexp_to_gsl_matrix (positions);      
+	gsl_vector *LVL = sexp_to_gsl_vector (levels);         
+	gsl_matrix *costs_mat = sexp_to_gsl_matrix (costs);    
+	int nofvars = LENGTH (levels);
+	int n_obs = LENGTH (Y); 
 
 	SEXP ANS = PROTECT(allocVector(VECSXP, 17)); ++nProtected;
 	SEXP ANS_names = PROTECT(allocVector(STRSXP, 17)); ++nProtected;
@@ -72,7 +83,7 @@ SEXP glm_mcmcbas(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 	n = sortvars(vars, probs, p);
 	for (i =n; i <p; i++) REAL(MCMCprobs)[vars[i].index] = probs[vars[i].index];
 	for (i =0; i <n; i++) REAL(MCMCprobs)[vars[i].index] = 0.0;
-	int noInclusionIs1 = no_prior_inclusion_is_1(p, probs);
+	// int noInclusionIs1 = no_prior_inclusion_is_1(p, probs);
 
 	// fill in the sure things
 	int *model = ivecalloc(p);
@@ -97,20 +108,21 @@ SEXP glm_mcmcbas(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 	int pmodel = INTEGER(modeldim)[m];
 	SEXP Rmodel_m =	PROTECT(allocVector(INTSXP,pmodel));
 	GetModel_m(Rmodel_m, model, p);
-	//evaluate logmargy and shrinkage
-	SEXP glm_fit = PROTECT(glm_FitModel(X, Y, Rmodel_m, Roffset, Rweights,
-					    glmfamily, Rcontrol, Rlaplace,
-					    betapriorfamily));
-	prior_m  = compute_prior_probs(model,pmodel,p, modelprior, noInclusionIs1);
-
-//	logmargy = REAL(getListElement(getListElement(glm_fit, "lpy"),"lpY"))[0];
-//	shrinkage_m = REAL(getListElement(getListElement(glm_fit, "lpy"),  "shrinkage"))[0];
-//	SetModel2(logmargy, shrinkage_m, prior_m, sampleprobs, logmarg, shrinkage, priorprobs, m);
-//	SetModel1(glm_fit, Rmodel_m, beta, se, modelspace, deviance, R2, Q, Rintercept, m);
-	SetModel_glm(glm_fit, Rmodel_m, beta, se, modelspace, deviance, R2, Q,Rintercept, 
-              prior_m, sampleprobs, logmarg, shrinkage, priorprobs,m);
 	
-//	UNPROTECT(2);
+	// Initial model fit
+	SEXP glm_fit = PROTECT(glm_FitModel(X, Y, Rmodel_m, Roffset, Rweights, glmfamily,
+		Rcontrol, Rlaplace, betapriorfamily,
+		positions, levels));
+
+	prior_m  = compute_prior_probs_MCMC (model, p, modelprior, POS, nofvars, LVL, costs_mat, n_obs);
+
+	// Evaluate logmargy and shrinkage
+	logmargy = REAL(getListElement(getListElement(glm_fit, "lpy"),"lpY"))[0];
+	shrinkage_m = REAL(getListElement(getListElement(glm_fit, "lpy"),"shrinkage"))[0];
+
+	SetModel_glm(glm_fit, Rmodel_m, beta, se, modelspace, deviance, R2, Q,Rintercept, 
+				 prior_m, sampleprobs, logmarg, shrinkage, priorprobs, m);
+	UNPROTECT(2);
 
 	int nUnique=0, newmodel=0;
 	double *real_model = vecalloc(n);
@@ -128,7 +140,7 @@ SEXP glm_mcmcbas(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 	double problocal = REAL(plocal)[0];
 
 
- 	while (nUnique <  nModels && m < INTEGER(BURNIN_Iterations)[0]) {
+ 	while (nUnique <  nModels && m < (INTEGER(MCMC_Iterations)[0] + INTEGER(BURNIN_Iterations)[0])) {
 		memcpy(model, modelold, sizeof(int)*p);
 		pmodel =  n_sure;
 
@@ -153,19 +165,19 @@ SEXP glm_mcmcbas(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 			MH = 1.0/(1.0 - problocal);
 		}
 		if (newmodel == 1) {
-		  new_loc = nUnique;
-		  PROTECT(Rmodel_m = allocVector(INTSXP,pmodel));
-		  GetModel_m(Rmodel_m, model, p);
+			new_loc = nUnique;
+			PROTECT(Rmodel_m = allocVector(INTSXP,pmodel));
+			GetModel_m(Rmodel_m, model, p);
 
-		  glm_fit = PROTECT(glm_FitModel(X, Y, Rmodel_m, Roffset, Rweights,
-						 glmfamily, Rcontrol, Rlaplace,
-						 betapriorfamily));
-		  prior_m = compute_prior_probs(model,pmodel,p, modelprior, noInclusionIs1);
+			glm_fit = PROTECT(glm_FitModel(X, Y, Rmodel_m, Roffset, Rweights, glmfamily,
+							Rcontrol, Rlaplace, betapriorfamily, positions, levels));
 
-		  logmargy = REAL(getListElement(getListElement(glm_fit, "lpy"),"lpY"))[0];
-		  shrinkage_m = REAL(getListElement(getListElement(glm_fit, "lpy"),
-						  "shrinkage"))[0];
-		  postnew = logmargy + log(prior_m);
+			prior_m  = compute_prior_probs_MCMC (model, p, modelprior, POS, nofvars, LVL, costs_mat, n_obs);
+
+			logmargy = REAL(getListElement(getListElement(glm_fit, "lpy"),"lpY"))[0];
+			shrinkage_m = REAL(getListElement(getListElement(glm_fit, "lpy"), "shrinkage"))[0];
+
+			postnew = logmargy + log(prior_m);
 		}
 		else {
 		  new_loc = branch->where;
@@ -176,15 +188,15 @@ SEXP glm_mcmcbas(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 		if (unif_rand() < MH) {
 		  if (newmodel == 1)  {
 		    new_loc = nUnique;
+			INTEGER(Rcounts)[new_loc] = 0;
 		    insert_model_tree(tree, vars, n, model, nUnique);
 		    INTEGER(modeldim)[nUnique] = pmodel;
 
-//		    SetModel2(logmargy, shrinkage_m, prior_m, sampleprobs, logmarg, shrinkage, priorprobs, nUnique);
-//		    SetModel1(glm_fit, Rmodel_m, beta, se, modelspace, deviance, R2, Q, Rintercept, nUnique);
 		    SetModel_glm(glm_fit, Rmodel_m, beta, se, modelspace, deviance, R2, Q,Rintercept, 
                    prior_m, sampleprobs, logmarg, shrinkage, priorprobs, nUnique);
-//		    UNPROTECT(2);
+		    UNPROTECT(2);
 		    ++nUnique;
+
 		  }
 		  old_loc = new_loc;
 		  postold = postnew;
@@ -193,7 +205,10 @@ SEXP glm_mcmcbas(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 		} else  {
 		  if (newmodel == 1) UNPROTECT(2);
 		}
-		INTEGER(counts)[old_loc] += 1;
+
+		if (m >= INTEGER(BURNIN_Iterations)[0])
+			INTEGER(counts)[old_loc] += 1;
+
 		for (i = 0; i < n; i++) {
 		  // store in opposite order so nth variable is first
 		  real_model[n-1-i] = (double) modelold[vars[i].index];
@@ -244,18 +259,27 @@ SEXP glm_mcmcbas(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 	    PROTECT(Rmodel_m = allocVector(INTSXP,pmodel));
 	    GetModel_m(Rmodel_m, model, p);
 
-	    glm_fit = PROTECT(glm_FitModel(X, Y, Rmodel_m, Roffset, Rweights,
-				       glmfamily, Rcontrol, Rlaplace,
-				       betapriorfamily));
-	    prior_m = compute_prior_probs(model,pmodel,p, modelprior, noInclusionIs1);
+		glm_fit = PROTECT(glm_FitModel(X, Y, Rmodel_m, Roffset, Rweights, glmfamily,
+			Rcontrol, Rlaplace, betapriorfamily, positions, levels));
+
+		// prior_m  = compute_prior_probs_MCMC (model, p, modelprior, POS, nofvars, LVL, costs_mat, n_obs);
+
+		// Allocate a GSL vector of size p
+		gsl_vector *index = gsl_vector_alloc(p);
+		// Copy values from model to index
+		for (size_t i = 0; i < p; ++i) {
+		gsl_vector_set(index, i, (double)model[i]);
+		}
+
+		double prior_m  = compute_prior_probs_enumeration(index, p, modelprior, POS, nofvars, LVL, costs_mat, n_obs);
+		gsl_vector_free(index);
+
 	    logmargy = REAL(getListElement(getListElement(glm_fit, "lpy"),"lpY"))[0];
-	    shrinkage_m = REAL(getListElement(getListElement(glm_fit, "lpy"),
-			    			  "shrinkage"))[0];
-//	    SetModel2(logmargy, shrinkage_m, prior_m, sampleprobs, logmarg, shrinkage, priorprobs, m);
-//	    SetModel1(glm_fit, Rmodel_m, beta, se, modelspace, deviance, R2, Q, Rintercept, m);
+	    shrinkage_m = REAL(getListElement(getListElement(glm_fit, "lpy"), "shrinkage"))[0];
+
 	    SetModel_glm(glm_fit, Rmodel_m, beta, se, modelspace, deviance, R2, Q,Rintercept, 
                    prior_m, sampleprobs, logmarg, shrinkage, priorprobs,m);
-//	    UNPROTECT(2);
+	    UNPROTECT(2);
 
     	REAL(sampleprobs)[m] = pigamma[0];
 
@@ -352,6 +376,11 @@ SEXP glm_mcmcbas(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 
 	PutRNGstate();
 	UNPROTECT(nProtected);
+
+    gsl_matrix_free (POS);                                  
+    gsl_vector_free (LVL);                                   
+    gsl_matrix_free (costs_mat);
+
 	return(ANS);
 }
 

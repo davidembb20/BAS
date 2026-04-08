@@ -239,7 +239,7 @@ SEXP glm_sampleworep(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 			gsl_vector_set(index, i, (double)model[i]);
 		}
 
-		double prior_m  = compute_prior_probs_enumeration(index, p, modelprior, POS, nofvars, LVL, costs_mat, n_obs);
+		prior_m  = compute_prior_probs_enumeration(index, p, modelprior, POS, nofvars, LVL, costs_mat, n_obs);
 		gsl_vector_free(index);
 
 		logmargy = REAL(getListElement(getListElement(glm_fit, "lpy"),"lpY"))[0];
