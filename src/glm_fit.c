@@ -27,6 +27,7 @@ SEXP glm_FitModel(SEXP RX, SEXP RY, SEXP Rmodel_m,  //input data
     memcpy(Xwork + j * n, X + model_m_j*n, sizeof(double)*n);
   }
  
+  /* 1st element (list) of the glm_fit list */
   SEXP glm_MLEs = PROTECT(glm_bas(RXmodel, RY, glmfamily, Roffset, Rweights, Rcontrol));
   nprotected++;
   
@@ -42,8 +43,10 @@ SEXP glm_FitModel(SEXP RX, SEXP RY, SEXP Rmodel_m,  //input data
   SEXP Rdeviance = PROTECT(duplicate(getListElement(glm_MLEs, "deviance"))); nprotected++;
   SEXP Rcoef = PROTECT(duplicate(getListElement(glm_MLEs, "coefficients")));nprotected++;
   
+  /* 2nd element (list) of the glm_fit list */
   SEXP Rlpy = PROTECT(gglm_lpy(RXmodel_noIntercept, RY, Rcoef, Rmu, Rdeviance, Rweights,
-                               glmfamily, betapriorfamily,  Rlaplace));
+                               glmfamily, betapriorfamily, Rlaplace,
+                               Rmodel_m, positions, levels));
   nprotected++;
   
   SEXP ANS = PROTECT(allocVector(VECSXP, 2)); nprotected++;
@@ -57,12 +60,47 @@ SEXP glm_FitModel(SEXP RX, SEXP RY, SEXP Rmodel_m,  //input data
   setAttrib(ANS, R_NamesSymbol, ANS_names);
   
   UNPROTECT(nprotected);
-  return(ANS);
+  return(ANS); /* List of 2 lists object */
 }
 
+/* Equal to rank [1|X_M] - 1, to adjust for the intercept being in the original design matrix */
+int model_rank (int *index, int p, gsl_matrix *positions, int nofvars, int *levels) {
+  
+  /* Here index also includes the intercept and has length p+1,
+     as the p argument here does not include the intercept */
+  int rank = 0; 
+  
+  for (int i = 0; i < nofvars; ++i) {
+
+      double suma = 0.0; int j = 1;
+      double Li = levels [i]; /* 1 (num) or ≥2  (factor)  */
+
+      /* Walk across the p (without the intercept) design columns, 0 … p-1 */
+      while (suma < Li && j <= p) {
+      // the number of active dummies for variable i can´t be higher then its number of levels
+
+          /* Add 1 when column j belongs to variable i *and* is in M (is active) */
+          suma += gsl_matrix_get (positions, i, (j-1)) * index [j];
+          /* We´re skipping the 1st column (for the intercept) */
+          j++;
+
+      }
+  
+      rank += (int) suma; // adds 0 for variables not included in the model...
+
+      if (Li > 1.0 && suma == Li) {          
+        rank--; // we´re removing 1 for overparameterized factors       
+      }
+
+  }
+
+  return rank; // corrected_p
+
+}
 
 SEXP gglm_lpy(SEXP RX, SEXP RY, SEXP Rcoef, SEXP Rmu, SEXP Rdeviance, SEXP Rwts, 
               glmstptr * glmfamily, betapriorptr * betapriorfamily, SEXP  Rlaplace) {
+  
   int *xdims = INTEGER(getAttrib(RX,R_DimSymbol));
   int n=xdims[0], p = xdims[1];
   int nProtected = 0;
@@ -142,11 +180,32 @@ SEXP gglm_lpy(SEXP RX, SEXP RY, SEXP Rcoef, SEXP Rmu, SEXP Rdeviance, SEXP Rwts,
     Q += XcBeta[j] * XcBeta[j] * Ieta[j];
   }
   
+  /* Added by David */
+  if (TYPEOF(levels) != INTSXP) {
+    /* coercion creates a *new* object you must protect */
+    levels = PROTECT(coerceVector(levels, INTSXP));
+    nProtected++;
+  }
+
+  int *LVL     = INTEGER (levels); 
+  int nofvars  = LENGTH  (levels);
+  int *model_m = INTEGER (Rmodel_m); // includes the intercept...
+  int all_p    = INTEGER (getAttrib(positions, R_DimSymbol))[1];
+  int pmodel   = LENGTH  (Rmodel_m);
+  /* in tree.structures.c */
+  int *index   = GetModel_all (model_m, pmodel, all_p); // includes the intercept...
+  gsl_matrix *POS = sexp_to_gsl_matrix (positions);
+
+
+  /* Instead of p_M, we now have (rank[1|X_M] - 1) */
+  int corrected_p = 0; 
+  corrected_p = model_rank (index, all_p, POS, nofvars, LVL); // Correcting this for the oversaturated models...
+  gsl_matrix_free (POS);
   
-  lpY = betapriorfamily->logmarglik_fun(betapriorfamily->hyperparams, p, Q,
+  /* corrected_p instead of p */
+  lpY = betapriorfamily->logmarglik_fun(betapriorfamily->hyperparams, corrected_p, Q,
                                         loglik_mle, logdet_Iintercept, laplace);
-  
-  shrinkage_m = betapriorfamily->shrinkage_fun(betapriorfamily->hyperparams, p, Q, laplace);
+  shrinkage_m = betapriorfamily->shrinkage_fun(betapriorfamily->hyperparams, corrected_p, Q, laplace);
   
   intercept = coef[0];
   for (i = 0; i < p; i++) {
@@ -176,7 +235,6 @@ SEXP gglm_lpy(SEXP RX, SEXP RY, SEXP Rcoef, SEXP Rmu, SEXP Rdeviance, SEXP Rwts,
   return(ANS);
   //return(RlpY);
 }
-
 
 SEXP glm_bas(SEXP RX, SEXP RY, glmstptr *glmfamily, SEXP Roffset, SEXP Rweights, SEXP Rcontrol) {
 	int   *xdims = INTEGER(getAttrib(RX,R_DimSymbol)), n=xdims[0], p = xdims[1];
