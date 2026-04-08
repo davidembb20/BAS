@@ -24,6 +24,8 @@ SEXP glm_sampleworep_grow(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
   gsl_matrix *POS = sexp_to_gsl_matrix(positions);    /* >>> GSL-ADD */
   gsl_vector *LVL = sexp_to_gsl_vector(levels);       /* >>> GSL-ADD */
   gsl_matrix *costs_mat = sexp_to_gsl_matrix(costs);  /* >>> GSL-ADD */
+  int nofvars = LENGTH(levels);
+  int n_obs = LENGTH(Y); // Number of observations
 
 //	Rprintf("Allocating Space for %d Models\n", nModels0) ;
 
