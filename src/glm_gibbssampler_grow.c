@@ -189,7 +189,7 @@ SEXP glm_mcmc_grow(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 	UNPROTECT(2);
 
     // MCMC sampling loop
-	int nUnique=0, newmodel=0;
+	int nUnique=0, newmodel=0, nsamples=0;
 	double *real_model = vecalloc(n);
 	int *modelold = ivecalloc(p);
 	int old_loc = 0;
@@ -227,7 +227,8 @@ SEXP glm_mcmc_grow(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 		}
 
 		if (pmodel  == n_sure || pmodel == n + n_sure) {
-			MH = 1.0/(1.0 - problocal);
+			// MH = 1.0/(1.0 - problocal);
+			MH = 1.0; /* Won´t use the random walk proposal here */
 		}
 		if (newmodel == 1) {
 			new_loc = nUnique;
@@ -249,11 +250,17 @@ SEXP glm_mcmc_grow(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 		  postnew =  REAL(logmarg)[new_loc] + log(REAL(priorprobs)[new_loc]);
 		}
 
-		MH *= exp(postnew - postold);
+
+		/* Conjugate Gibbs / componentwise Gibbs sampler */
+		/* Page 17 of George and McCulloch (1997) - Approaches for BVS */
+		MH *= exp (postnew) / (exp (postold) + exp (postnew));
+		//MH *= exp(postnew - postold);
 		//    Rprintf("MH new %lf old %lf\n", postnew, postold);
+
+		/* We should be always accepting the proposals, shouldn´t we?*/
 		if (unif_rand() < MH) {
 		 if (newmodel == 1)  {
-			if ((m % thin) == 0 & m >= INTEGER(BURNIN_Iterations)[0])  {
+			if ((m % thin) == 0 && m >= INTEGER(BURNIN_Iterations)[0])  {
 				new_loc = nUnique;
 				INTEGER(Rcounts)[new_loc] = 0;
 				insert_model_tree(tree, vars, n, model, nUnique);
@@ -275,14 +282,19 @@ SEXP glm_mcmc_grow(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 			if (newmodel == 1) UNPROTECT(2);
 		}
 		
-		if ((m % thin) == 0 & m >= INTEGER(BURNIN_Iterations)[0])
+		if ((m % thin) == 0 && m >= INTEGER(BURNIN_Iterations)[0]) {
+
 			INTEGER(Rcounts)[old_loc] += 1; 
 
-		for (i = 0; i < n; i++) {
-			// store in opposite order so nth variable is first
-			real_model[n-1-i] = (double) modelold[vars[i].index];
-			REAL(MCMCprobs)[vars[i].index] += (double) modelold[vars[i].index];
+			for (i = 0; i < n; i++) {
+				// store in opposite order so nth variable is first
+				real_model[n-1-i] = (double) modelold[vars[i].index];
+				REAL(MCMCprobs)[vars[i].index] += (double) modelold[vars[i].index];
+			}
+
+			nsamples++;
 		}
+			
 		
 		if (nUnique >= nModels && m < (INTEGER(MCMC_Iterations)[0] + INTEGER(BURNIN_Iterations)[0])){
 		  // expand nModels and grow result vectors
@@ -338,7 +350,7 @@ SEXP glm_mcmc_grow(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 
 //	Rprintf("Compute MCMC Probabilities\n");
 	for (i = 0; i < n; i++) {
-		REAL(MCMCprobs)[vars[i].index] /= (double) m;
+		REAL(MCMCprobs)[vars[i].index] /= (double) nsamples; /* instead of m */
 	}
 
 

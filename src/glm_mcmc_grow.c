@@ -253,7 +253,7 @@ SEXP glm_mcmc_grow(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 		//    Rprintf("MH new %lf old %lf\n", postnew, postold);
 		if (unif_rand() < MH) {
 		 if (newmodel == 1)  {
-			if ((m % thin) == 0 & m >= INTEGER(BURNIN_Iterations)[0])  {
+			if ((m % thin) == 0 && m >= INTEGER(BURNIN_Iterations)[0])  {
 				new_loc = nUnique;
 				INTEGER(Rcounts)[new_loc] = 0;
 				insert_model_tree(tree, vars, n, model, nUnique);
@@ -275,7 +275,7 @@ SEXP glm_mcmc_grow(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 			if (newmodel == 1) UNPROTECT(2);
 		}
 		
-		if ((m % thin) == 0 & m >= INTEGER(BURNIN_Iterations)[0])
+		if ((m % thin) == 0 && m >= INTEGER(BURNIN_Iterations)[0])
 			INTEGER(Rcounts)[old_loc] += 1; 
 
 		for (i = 0; i < n; i++) {

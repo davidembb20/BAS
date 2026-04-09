@@ -272,7 +272,7 @@ SEXP glm_mcmc(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 		 if (newmodel == 1)  {
 
 			/* David adjusted this if statement */
-			if ((m % thin) == 0 & m >= INTEGER(BURNIN_Iterations)[0])  {
+			if ((m % thin) == 0 && m >= INTEGER(BURNIN_Iterations)[0])  {
 			  new_loc = nUnique;
 			  INTEGER(Rcounts)[new_loc] = 0; /* David added this, as in glm_mcmc_grow.c */
 			  insert_model_tree(tree, vars, n, model, nUnique);
@@ -295,9 +295,10 @@ SEXP glm_mcmc(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 		}
 		
 		/* David added this if statement */
-		if ((m % thin) == 0 & m >= INTEGER(BURNIN_Iterations)[0])
+		if ((m % thin) == 0 && m >= INTEGER(BURNIN_Iterations)[0])
 			INTEGER(Rcounts)[old_loc] += 1; 
 		
+		/* Shouldn´t we include this inside the previous if statement? */
 		for (i = 0; i < n; i++) {
 			// store in opposite order so nth variable is first
 			real_model[n-1-i] = (double) modelold[vars[i].index];
@@ -307,7 +308,7 @@ SEXP glm_mcmc(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 	}
 
 	for (i = 0; i < n; i++) {
-		REAL(MCMCprobs)[vars[i].index] /= (double) m;
+		REAL(MCMCprobs)[vars[i].index] /= (double) m; /* Or by nsamples? */
 	}
 
 	// Compute marginal probabilities
@@ -338,88 +339,6 @@ SEXP glm_mcmc(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 	  SET_VECTOR_ELT(ANS, 16, resizeVector(Rintercept, nUnique));
 	}	  
 	
-	
-/*
-	// Compute marginal probabilities
-	mcurrent = nUnique;
-//	Rprintf("NumUnique Models Accepted %d \n", nUnique);
-	compute_modelprobs(modelprobs, logmarg, priorprobs,mcurrent);
-	compute_margprobs(modelspace, modeldim, modelprobs, probs, mcurrent, p);
-
-	INTEGER(NumUnique)[0] = nUnique;
-	SET_VECTOR_ELT(ANS, 0, Rprobs);
-	SET_STRING_ELT(ANS_names, 0, mkChar("probne0"));
-
-	
-	if (nUnique < nModels) {
-//	  Rprintf("MCMC Resizing\n");
-	  SETLENGTH(modelspace, nUnique);
-	  SETLENGTH(logmarg, nUnique);
-	  SETLENGTH(modelprobs, nUnique);
-	  SETLENGTH(priorprobs, nUnique);
-	  SETLENGTH(sampleprobs, nUnique);
-	  SETLENGTH(counts, nUnique);
-	  SETLENGTH(beta, nUnique);
-	  SETLENGTH(se, nUnique);
-	  SETLENGTH(deviance, nUnique);
-	  SETLENGTH(Q, nUnique);
-	  SETLENGTH(shrinkage, nUnique);
-	  SETLENGTH(modeldim, nUnique);
-	  SETLENGTH(R2, nUnique);
-	  SETLENGTH(Rintercept, nUnique); 
-	}
-
-	SET_VECTOR_ELT(ANS, 1, modelspace);
-	SET_STRING_ELT(ANS_names, 1, mkChar("which"));
-
-	SET_VECTOR_ELT(ANS, 2, logmarg);
-	SET_STRING_ELT(ANS_names, 2, mkChar("logmarg"));
-
-	SET_VECTOR_ELT(ANS, 3, modelprobs);
-	SET_STRING_ELT(ANS_names, 3, mkChar("postprobs"));
-
-	SET_VECTOR_ELT(ANS, 4, priorprobs);
-	SET_STRING_ELT(ANS_names, 4, mkChar("priorprobs"));
-
-	SET_VECTOR_ELT(ANS, 5, sampleprobs);
-	SET_STRING_ELT(ANS_names, 5, mkChar("sampleprobs"));
-
-	SET_VECTOR_ELT(ANS, 6, deviance);
-	SET_STRING_ELT(ANS_names, 6, mkChar("deviance"));
-
-	SET_VECTOR_ELT(ANS, 7, beta);
-	SET_STRING_ELT(ANS_names, 7, mkChar("mle"));
-
-	SET_VECTOR_ELT(ANS, 8, se);
-	SET_STRING_ELT(ANS_names, 8, mkChar("mle.se"));
-
-	SET_VECTOR_ELT(ANS, 9, shrinkage);
-	SET_STRING_ELT(ANS_names, 9, mkChar("shrinkage"));
-
-	SET_VECTOR_ELT(ANS, 10, modeldim);
-	SET_STRING_ELT(ANS_names, 10, mkChar("size"));
-
-	SET_VECTOR_ELT(ANS, 11, R2);
-	SET_STRING_ELT(ANS_names, 11, mkChar("R2"));
-
-	SET_VECTOR_ELT(ANS, 12, counts);
-	SET_STRING_ELT(ANS_names, 12, mkChar("freq"));
-
-	SET_VECTOR_ELT(ANS, 13, MCMCprobs);
-	SET_STRING_ELT(ANS_names, 13, mkChar("probne0.MCMC"));
-
-	SET_VECTOR_ELT(ANS, 14, NumUnique);
-	SET_STRING_ELT(ANS_names, 14, mkChar("n.Unique"));
-
-  SET_VECTOR_ELT(ANS, 15, Q);
-  SET_STRING_ELT(ANS_names, 15, mkChar("Q"));
-
-	SET_VECTOR_ELT(ANS, 16, Rintercept);
-	SET_STRING_ELT(ANS_names, 16, mkChar("intercept"));
-
-	setAttrib(ANS, R_NamesSymbol, ANS_names);
-*/
-
 	PutRNGstate();
 	UNPROTECT(nProtected);
 	//Rprintf("Return\n");
