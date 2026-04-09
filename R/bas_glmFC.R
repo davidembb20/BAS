@@ -686,7 +686,7 @@ bas.glmFC <- function(formula, family = binomial(link = "logit"),
       Rthin = as.integer(thin),
       family = family, Rcontrol = control,
       Rlaplace = as.integer(laplace),
-      Rparents = parents
+      Rparents = parents,
       Rexpand = as.numeric(expand)
     ),
     "GibbsBVS" = .Call(C_glm_gibbsBVS,
