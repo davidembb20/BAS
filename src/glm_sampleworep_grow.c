@@ -12,7 +12,7 @@ SEXP glm_sampleworep_grow(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 			 SEXP positions, SEXP levels, SEXP costs,
 			 SEXP Rbestmodel,  SEXP plocal,
 		     SEXP family, SEXP Rcontrol,
-		     SEXP Rupdate, SEXP Rlaplace, SEXP Rparents) {
+		     SEXP Rupdate, SEXP Rlaplace, SEXP Rparents, SEXP Rexpand) {
 
 
   int nModels0 = INTEGER(RnModels)[0];  // initial guess on number of models to return

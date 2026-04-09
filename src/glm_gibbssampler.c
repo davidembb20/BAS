@@ -240,7 +240,7 @@ SEXP glm_gibbssampler(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 			pmodel  += bit;
 		}
 
-		/* Confirm again Conjugate Gibbs / component wise gibbs sampler */
+		/* Confirm again Conjugate Gibbs / componentwise gibbs sampler */
 		if (pmodel  == n_sure || pmodel == n + n_sure) {
 			// MH = 1.0/(1.0 - problocal);
 			MH = 1.0; /* Won´t use the random walk proposal here */

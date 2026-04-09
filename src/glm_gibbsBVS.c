@@ -6,18 +6,36 @@
 #include "bas.h"
 
 
+int bernoulli_draw (double prob) {
+    return (unif_rand () < prob); /* returns 1 with prob, 0 otherwise */
+}
+
+/* perm must be pre-allocated length n */
+void randperm (int *perm, int n) {
+
+	/* The step j = 0 is reduntant; no need to include it... */
+	for (int j = n - 1; j > 0; --j) { /* Fisher–Yates step */
+		
+		/* unif_rand() ∈ (0,1); multiply by (j+1) and truncate to int 0…j */
+		int k = (int)(unif_rand() * (j + 1));
+		int tmp = perm[j]; 
+		perm[j] = perm[k]; 
+		perm[k] = tmp;
+
+	}
+	
+}
+
 // [[register]]
-SEXP glm_mcmc(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
-	      SEXP Rprobinit, SEXP Rmodeldim,
-	      SEXP modelprior,  SEXP betaprior,
-		  SEXP positions, SEXP levels, SEXP costs, 
-		  SEXP Rbestmodel,  SEXP plocal,
+SEXP glm_gibbsBVS(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
+	      SEXP Rprobinit, SEXP Rmodeldim, SEXP modelprior,  SEXP betaprior,
+		  SEXP positions, SEXP levels, SEXP costs, SEXP Rbestmodel,
 	      SEXP BURNIN_Iterations, SEXP MCMC_Iterations, SEXP Rthin, 
-	      SEXP family, SEXP Rcontrol, SEXP Rlaplace, SEXP Rparents
-			  )
+	      SEXP family, SEXP Rcontrol, SEXP Rlaplace, SEXP Rparents)
 {
-  double *probs, MH=0.0, prior_m=1.0, shrinkage_m, logmargy, postold, postnew;
-  int i, m, n, pmodel_old, *bestmodel;
+
+  double *probs, prior_m=1.0, shrinkage_m, logmargy, postold, postnew;
+  int i, m, n, *bestmodel;
   int mcurrent, n_sure;
   int *counts;
   
@@ -40,29 +58,6 @@ SEXP glm_mcmc(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 	int n_obs = LENGTH (Y); // Number of observations
 
 	// Rprintf("nModels to sample is %d\n", nModels);
-	
-	/*
-	SEXP ANS = PROTECT(allocVector(VECSXP, 17)); ++nProtected;
-	SEXP ANS_names = PROTECT(allocVector(STRSXP, 17)); ++nProtected;
-	SEXP Rprobs = PROTECT(duplicate(Rprobinit)); ++nProtected;
-	SEXP MCMCprobs= PROTECT(duplicate(Rprobinit)); ++nProtected;
-	SEXP R2 = PROTECT(allocVector(REALSXP, nModels)); ++nProtected;
-	SEXP shrinkage = PROTECT(allocVector(REALSXP, nModels)); ++nProtected;
-	SEXP modelspace = PROTECT(allocVector(VECSXP, nModels)); ++nProtected;
-	SEXP modeldim =  PROTECT(duplicate(Rmodeldim)); ++nProtected;
-	SEXP counts =  PROTECT(duplicate(Rmodeldim)); ++nProtected;
-	SEXP beta = PROTECT(allocVector(VECSXP, nModels)); ++nProtected;
-	SEXP se = PROTECT(allocVector(VECSXP, nModels)); ++nProtected;
-	SEXP deviance = PROTECT(allocVector(REALSXP, nModels)); ++nProtected;
-	SEXP modelprobs = PROTECT(allocVector(REALSXP, nModels)); ++nProtected;
-	SEXP priorprobs = PROTECT(allocVector(REALSXP, nModels)); ++nProtected;
-	SEXP logmarg = PROTECT(allocVector(REALSXP, nModels)); ++nProtected;
-	SEXP sampleprobs = PROTECT(allocVector(REALSXP, nModels)); ++nProtected;
-	SEXP Q = PROTECT(allocVector(REALSXP, nModels)); ++nProtected;
-	SEXP Rintercept = PROTECT(allocVector(REALSXP, nModels)); ++nProtected;
-
-	SEXP NumUnique = PROTECT(allocVector(INTSXP, 1)); ++nProtected;
-*/
 	
 	SEXP ANS = PROTECT(allocVector(VECSXP, 17)); ++nProtected;
 	SEXP ANS_names = PROTECT(allocVector(STRSXP, 17)); ++nProtected;
@@ -147,21 +142,32 @@ SEXP glm_mcmc(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 	SET_VECTOR_ELT(ANS, 16, Rintercept);
 	SET_STRING_ELT(ANS_names, 16, mkChar("intercept"));
 	
-	
-	
+		
 	setAttrib(ANS, R_NamesSymbol, ANS_names);
 	
+	// Stuff for the auxiliary tree
+	SEXP aux_shrinkage   = PROTECT(allocVector(REALSXP, ((burnin + mcmc_size) * p))); ++nProtected;
+	SEXP aux_priorprobs  = PROTECT(allocVector(REALSXP, ((burnin + mcmc_size) * p))); ++nProtected; 
+	SEXP aux_logmarg     = PROTECT(allocVector(REALSXP, ((burnin + mcmc_size) * p))); ++nProtected;
+	SEXP aux_modeldim 	 = PROTECT(allocVector(INTSXP,  ((burnin + mcmc_size) * p))); ++nProtected; 
+	SEXP aux_beta 		 = PROTECT(allocVector(VECSXP,  ((burnin + mcmc_size) * p))); ++nProtected;
+	SEXP aux_se 		 = PROTECT(allocVector(VECSXP,  ((burnin + mcmc_size) * p))); ++nProtected;
+	SEXP aux_R2 		 = PROTECT(allocVector(REALSXP, ((burnin + mcmc_size) * p))); ++nProtected;
+	SEXP aux_deviance    = PROTECT(allocVector(REALSXP, ((burnin + mcmc_size) * p))); ++nProtected;
+	SEXP aux_Q           = PROTECT(allocVector(REALSXP, ((burnin + mcmc_size) * p))); ++nProtected;
+	SEXP aux_Rintercept  = PROTECT(allocVector(REALSXP, ((burnin + mcmc_size) * p))); ++nProtected;
 	
-
-
+	
 	//get dimsensions of all variables
 	int p = INTEGER(getAttrib(X,R_DimSymbol))[1];
 	
 	int thin = INTEGER(Rthin)[0];
+	int burnin = INTEGER(BURNIN_Iterations)[0];
+	int mcmc_size = (INTEGER(MCMC_Iterations)[0] / thin) + 1; // Rounding up
 
 	struct Var *vars = (struct Var *) R_alloc(p, sizeof(struct Var)); // Info about the model variables.
 	probs =  REAL(Rprobs); /* PIPs pointer */
-	n = sortvars(vars, probs, p);
+	n = sortvars(vars, probs, p); /* n = p, if initprobs = "Uniform"*/
 	for (i =n; i <p; i++) REAL(MCMCprobs)[vars[i].index] = probs[vars[i].index];
 	for (i =0; i <n; i++) REAL(MCMCprobs)[vars[i].index] = 0.0;
 	// int noInclusionIs1 = no_prior_inclusion_is_1(p, probs);
@@ -175,145 +181,345 @@ SEXP glm_mcmc(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 
 	GetRNGstate();
 
-	NODEPTR tree, branch;
-	tree = make_node(-1.0);
 	//  Rprintf("For m=0, Initialize Tree with initial Model\n");
-
 	m = 0;
 	bestmodel = INTEGER(Rbestmodel);
-	INTEGER(modeldim)[m] = n_sure;
 
 	// Rprintf("Create Tree\n");
+	NODEPTR tree, branch;
+	tree = make_node(-1.0);
 	branch = tree;
+	INTEGER(modeldim)[m] = n_sure;
 	CreateTree(branch, vars, bestmodel, model, n, m, modeldim, Rparents);
+
+	// Rprintf("Create Auxiliary Tree\n");
+	NODEPTR aux_tree, aux_branch;
+	aux_tree = make_node(-1.0);
+	aux_branch = aux_tree;
+	INTEGER(aux_modeldim)[m] = n_sure; /* Can´t I just use modeldim here? */
+	CreateTree(aux_branch, vars, bestmodel, model, n, m, aux_modeldim, Rparents);
+	
 	int pmodel = INTEGER(modeldim)[m];
 	SEXP Rmodel_m =	PROTECT(allocVector(INTSXP,pmodel));
 	GetModel_m(Rmodel_m, model, p);
 	
 	// Initial model fit
 	SEXP glm_fit = PROTECT(glm_FitModel(X, Y, Rmodel_m, Roffset, Rweights, glmfamily,
-						Rcontrol, Rlaplace, betapriorfamily,
-						positions, levels));
-
-	prior_m  = compute_prior_probs_MCMC (model, p, modelprior, POS, nofvars, LVL, costs_mat, n_obs);
-
-	// Evaluate logmargy and shrinkage
-	logmargy = REAL(getListElement(getListElement(glm_fit, "lpy"),"lpY"))[0];
-	shrinkage_m = REAL(getListElement(getListElement(glm_fit, "lpy"),"shrinkage"))[0];
-
-	SetModel_glm(glm_fit, Rmodel_m, beta, se, modelspace, deviance, R2, Q,Rintercept, 
-		prior_m, sampleprobs, logmarg, shrinkage, priorprobs, m);
-	UNPROTECT(2);
-
-	// MCMC sampling loop
-	int nUnique=0, newmodel=0;
-	double *real_model = vecalloc(n);
-	int *modelold = ivecalloc(p);
-	int old_loc = 0;
-	int new_loc;
-	pmodel_old = pmodel;
-	nUnique=1;
-	INTEGER(Rcounts)[0] = 1;
-	postold =  REAL(logmarg)[m] + log(REAL(priorprobs)[m]);
-	memcpy(modelold, model, sizeof(int)*p);
-	m = 0;
-	int *varin= ivecalloc(p);
-	int *varout= ivecalloc(p);
-	double problocal = REAL(plocal)[0];
-	
-	while (nUnique < nModels && m < (INTEGER(MCMC_Iterations)[0] + INTEGER(BURNIN_Iterations)[0])) {
-		memcpy(model, modelold, sizeof(int)*p);
-		pmodel =  n_sure;
-
-		MH = GetNextModelCandidate(pmodel_old, n, n_sure, model, vars, problocal,
-                             varin, varout, Rparents);
-
-		branch = tree;
-		newmodel= 0;
-		for (i = 0; i< n; i++) {
-			int bit =  model[vars[i].index];
-			if (bit == 1) {
-				if (branch->one != NULL) branch = branch->one;
-				else newmodel = 1;
-			} else {
-				if (branch->zero != NULL)  branch = branch->zero;
-				else newmodel = 1;
-			}
-			pmodel  += bit;
-		}
-
-		if (pmodel  == n_sure || pmodel == n + n_sure) {
-			MH = 1.0/(1.0 - problocal);
-		}
-		if (newmodel == 1) {
-			new_loc = nUnique;
-			PROTECT(Rmodel_m = allocVector(INTSXP,pmodel));
-			GetModel_m(Rmodel_m, model, p);
-
-			glm_fit = PROTECT(glm_FitModel(X, Y, Rmodel_m, Roffset, Rweights, glmfamily,
 						Rcontrol, Rlaplace, betapriorfamily, positions, levels));
 
-			prior_m  = compute_prior_probs_MCMC (model, p, modelprior, POS, nofvars, LVL, costs_mat, n_obs);
 
-			// Evaluate logmargy and shrinkage
-			logmargy = REAL(getListElement(getListElement(glm_fit, "lpy"),"lpY"))[0];
-			shrinkage_m = REAL(getListElement(getListElement(glm_fit, "lpy"),"shrinkage"))[0];
+	// Evaluate logmarg_m and shrinkage
+	logmarg_m = REAL(getListElement(getListElement(glm_fit, "lpy"),"lpY"))[0];
+	shrinkage_m = REAL(getListElement(getListElement(glm_fit, "lpy"),"shrinkage"))[0];
 
-			postnew = logmargy + log(prior_m);
-		} else {
-		  new_loc = branch->where;
-		  postnew =  REAL(logmarg)[new_loc] + log(REAL(priorprobs)[new_loc]);
-		}
+	
+	prior_m  = compute_prior_probs_MCMC (model, p, modelprior, POS, nofvars, LVL, costs_mat, n_obs);
 
-		MH *= exp(postnew - postold); /* Posterior Model Odds */
+	/* Set in Output Tree */ 
+	SetModel_glm(glm_fit, Rmodel_m, beta, se, modelspace, deviance, R2, Q, Rintercept, 
+		prior_m, sampleprobs, logmarg, shrinkage, priorprobs, m);
+	/* Set in Auxiliary Tree */
+	SetModel_glm(glm_fit, Rmodel_m, aux_beta, aux_se, aux_modelspace, aux_deviance, aux_R2, aux_Q, 
+		aux_Rintercept, prior_m, sampleprobs, aux_logmarg, aux_shrinkage, aux_priorprobs, m);
+	
+	UNPROTECT(2);
 
-		//    Rprintf("MH new %lf old %lf\n", postnew, postold);
-		if (unif_rand() < MH) {
-		 if (newmodel == 1)  {
+	INTEGER(Rcounts)[0] = 1;
+	postold =  REAL(logmarg)[m] + log(REAL(priorprobs)[m]);
+	int nUnique = 1, nUniqueVisited = 1; /* I might store less unique models than those I visited (burn-in and thinning)*/
 
-			/* David adjusted this if statement */
-			if ((m % thin) == 0 & m >= INTEGER(BURNIN_Iterations)[0])  {
-			  new_loc = nUnique;
-			  INTEGER(Rcounts)[new_loc] = 0; /* David added this, as in glm_mcmc_grow.c */
-			  insert_model_tree(tree, vars, n, model, nUnique);
-			  INTEGER(modeldim)[nUnique] = pmodel;
-				//Rprintf("model %d: %d variables\n", m, pmodel);
-
-			  SetModel_glm(glm_fit, Rmodel_m, beta, se, modelspace, deviance, R2, Q, Rintercept,
-                     prior_m, sampleprobs, logmarg, shrinkage, priorprobs, nUnique);
-			  UNPROTECT(2);
-			  ++nUnique;
-			}
-			else UNPROTECT(2);
-		 }
-			old_loc = new_loc;
-			postold = postnew;
-			pmodel_old = pmodel;
-			memcpy(modelold, model, sizeof(int)*p);
-		 } else  {
-			if (newmodel == 1) UNPROTECT(2);
-		}
+	// Burn-in Sampling loop
+	int *modelold = ivecalloc(p);
+	memcpy(modelold, model, sizeof(int)*p);
+	int *perm = malloc (n * sizeof(int));
+	double *real_model = vecalloc(n);
+	
+	int newmodel = 0, old_loc = 0, new_loc, thin_count = 0;
+	int aux_old_loc = 0, aux_new_loc;
+	
+	int component = 1, oldcomponent = 1, newcomponent = 1;
+	double ratio = 0.0;
+	
+	// Burn-In Period (old: current model and new: proposal)
+	/* As there´s no thinning, it can´t be enourmous, if thin > 1 */
+	for (int iter = 1; iter < (burnin + 1); iter++) {
+			
 		
-		/* David added this if statement */
-		if ((m % thin) == 0 & m >= INTEGER(BURNIN_Iterations)[0])
-			INTEGER(Rcounts)[old_loc] += 1; 
+		/* It might be more easier for newcomers to use p instead of n? */
+		/* Refreshing the permutation vector at each iteration … */		
+		for (int j = 0; j < n; ++j) {   
+			perm[j] = j;  /* 'j' represents a variable inside vars[] */
+		}
+			
+		randperm (perm, n); /* random permutation: can´t shuffle the intercept */
+
+		for (int idx = 0; idx < n; idx++) // Loop across all possible variables (except the intercept)...
+		{
+			// Copying an array of integers from modelold to model
+			memcpy (model, modelold, sizeof(int)*p);
+
+			/* Next Model Candidate (perm[idx] is always different from intercept_pos) */
+			component    = perm [idx]; // Randomly chosen variable
+			oldcomponent = model [vars[component].index]; // Before: vars[component].index
+			model [vars[component].index] = 1 - model [vars[component].index]; // Proposal (= next model)
+	
+			/*  ── Checking if the model was visited already / belongs to the tree ────   */
+			aux_branch   = aux_tree;        /* start at the root of the tree                      */
+			newmodel = 0;           
+			pmodel = n_sure;
+			for (int i = 0; i < n; i++) { /* Does the model already exists ?              */
+				int bit = model[vars[i].index];  /* inclusion flag for current predictor  */
+
+				if (bit == 1) {
+					/* Want to follow the 'one' child.  If it is missing, this model has
+					* never been stored before — record that fact but keep going so that
+					* pmodel is still computed correctly.                                */
+					if (aux_branch->one != NULL)
+						aux_branch = aux_branch->one;    /* descend one level                     */
+					else
+						newmodel = 1;            /* missing node → new (unseen) model     */
+				} else {
+					/* Analogous logic for 'zero' child (variable excluded). */
+					if (aux_branch->zero != NULL)
+						aux_branch = aux_branch->zero;
+					else
+						newmodel = 1;
+				}
+
+				pmodel += bit;                   /* running count of included variables   */
+			}
+
+			if (newmodel == 1) {
+
+				aux_new_loc = nUniqueVisited;
+				PROTECT (Rmodel_m = allocVector(INTSXP, pmodel)); // pmodel is the number of active variables in the model
+				GetModel_m (Rmodel_m, model, p); // Fill Rmodel_m with indices of active variables
+
+				glm_fit = PROTECT(glm_FitModel(X, Y, Rmodel_m, Roffset, Rweights, glmfamily,
+											   Rcontrol, Rlaplace, betapriorfamily, positions, levels));
+				logmarg_m    = REAL(getListElement(getListElement(glm_fit, "lpy"),"lpY"))[0];
+				shrinkage_m = REAL(getListElement(getListElement(glm_fit, "lpy"), "shrinkage"))[0];
+				
+				prior_m     = compute_prior_probs_MCMC (model, p, modelprior, POS, nofvars, LVL, costs_mat, n_obs);
+
+				postnew = logmarg_m + log (prior_m);
+
+			} 
+			else {
+				aux_new_loc      = aux_branch->where;
+				postnew = REAL(aux_logmarg)[aux_new_loc] + log(REAL(aux_priorprobs)[aux_new_loc]);
+			}
+
+			/* Check Appendix A of "On Sampling Strategies in BVS Problems with Large Model Spaces" from Gonzalo*/
+            /* If oldcomponent = 0, we have just exp (postnew) in the numerator */
+			/* If oldcomponent = 1, we have just exp (postold) in the numerator */
+			/* In the numerator we must have "a", i.e., the model with gamma_idx = 1 */
+            ratio = (oldcomponent * (exp (postold) - exp (postnew)) + exp (postnew))
+			      / (exp (postnew) + exp (postold));
+            newcomponent = bernoulli_draw (ratio); // Drawing from the full conditional
+
+			if (newcomponent == oldcomponent) { // If the proposal means in fact staying in the same place
+				if (newmodel == 1) UNPROTECT(2);
+				// No need to restore modelold, cause that is done at the beginning of the for loop
+			}
+			else { // Not staying in the current model
+				
+				if (newmodel == 1)  {
+				
+					aux_new_loc = nUniqueVisited;
+					insert_model_tree (aux_tree, vars, n, model, nUniqueVisited);
+					INTEGER(aux_modeldim)[nUniqueVisited] = pmodel;
+					SetModel_glm(glm_fit, Rmodel_m, aux_beta, aux_se, aux_modelspace, aux_deviance, aux_R2, aux_Q, 
+						aux_Rintercept, prior_m, sampleprobs, aux_logmarg, aux_shrinkage, aux_priorprobs, nUniqueVisited);
+					++nUniqueVisited;
+				
+					UNPROTECT(2);
+				}
+
+				aux_old_loc = aux_new_loc;
+				postold = postnew;
+				memcpy (modelold, model, sizeof(int)*p); // Copying an array of integers from model to modelold
+			}
+
+		}
+
+	}
+	
+
+	m++; /* Main loop beggining (m = 1), as we saved the initial model */
+	while (nUnique < nModels && m < (INTEGER(MCMC_Iterations)[0] / thin)) { /* This quocient is precisely the number of samples we´re going to save... */
+		
+		/* Refreshing the permutation vector at each iteration … */		
+		
+		for (int j = 0; j < n; ++j) {   
+			perm[j] = j;  /* 'j' represents a variable inside vars[] */
+		}
+			
+		randperm (perm, n); /* random permutation: do not shuffle the intercept, as I want all my models with it */
+
+		/* Thinning */
+		thin_count = 0;
+		while (thin_count < thin) {
+			
+			for (int idx = 0; idx < n; idx++) // Loop across all possible variables...
+			{
+				// Copying an array of integers from modelold to model
+				memcpy (model, modelold, sizeof(int)*p);
+
+				/* Next Model Candidate (perm[ind] is always different from intercept_pos) */
+				component    = perm [idx]; // Randomly chosen index (not variable)
+				oldcomponent = model [vars[component].index]; // Before: vars[component].index
+				model [vars[component].index] = 1 - model [vars[component].index]; // Proposal
+
+				/*  ── Checking if the model was visited already / belongs to the tree ────   */
+				aux_branch   = aux_tree;        /* start at the root of the tree                      */
+				newmodel = 0;           /* assume the model already exists                    */
+				pmodel   = n_sure;
+				for (int i = 0; i < n; i++) { 
+					int bit = model[vars[i].index];  /* inclusion flag for current predictor  */
+
+					if (bit == 1) {
+						/* Want to follow the 'one' child.  If it is missing, this model has
+						* never been stored before — record that fact but keep going so that
+						* pmodel is still computed correctly.                                */
+						if (aux_branch->one != NULL)
+							aux_branch = aux_branch->one;    /* descend one level                     */
+						else
+							newmodel = 1;            /* missing node → new (unseen) model     */
+					} else {
+						/* Analogous logic for 'zero' child (variable excluded). */
+						if (aux_branch->zero != NULL)
+							aux_branch = aux_branch->zero;
+						else
+							newmodel = 1;
+					}
+
+					pmodel += bit;                   /* running count of included variables   */
+				}
+
+				if (newmodel == 1) {
+
+					aux_new_loc = nUniqueVisited;
+					PROTECT (Rmodel_m = allocVector(INTSXP, pmodel)); // pmodel is the number of active variables in the model
+					GetModel_m (Rmodel_m, model, p); // Fill Rmodel_m with indices of active variables
+
+					glm_fit      = PROTECT(glm_FitModel(X, Y, Rmodel_m, Roffset, Rweights, glmfamily,
+														Rcontrol, Rlaplace, betapriorfamily, positions, levels));
+					logmarg_m     = REAL(getListElement(getListElement(glm_fit, "lpy"),"lpY"))[0];
+					shrinkage_m  = REAL(getListElement(getListElement(glm_fit, "lpy"), "shrinkage"))[0];
+					
+					prior_m      = compute_prior_probs_MCMC (model, p, modelprior, POS, nofvars, LVL, costs_mat, n_obs);
+
+					postnew = logmarg_m + log (prior_m);
+
+				} 
+				else {
+					aux_new_loc = aux_branch->where;
+					postnew =  REAL(aux_logmarg)[aux_new_loc] + log(REAL(aux_priorprobs)[aux_new_loc]);
+				}
+
+				/* Check Appendix A of "On Sampling Strategies in BVS Problems with Large Model Spaces" from Gonzalo*/
+				/* If oldcomponent = 0, we have just exp (postnew) in the numerator */
+				/* If oldcomponent = 1, we have just exp (postold) in the numerator */
+				/* In the numerator we must have "a", i.e., the model with gamma_idx = 1 */
+				ratio = (oldcomponent * (exp (postold) - exp (postnew)) + exp (postnew))
+					/ (exp (postnew) + exp (postold));
+				newcomponent = bernoulli_draw (ratio); // Drawing from the full conditional
+
+				if (newcomponent == oldcomponent) { // If the proposal means in fact staying in the same place
+					if (newmodel == 1) UNPROTECT(2);
+					// No need to restore modelold, cause that is done at the beginning of the for loop
+				}
+				else { // Not staying in the current model
+					
+					if (newmodel == 1)  {
+					
+						aux_new_loc = nUniqueVisited;
+						insert_model_tree (aux_tree, vars, n, model, nUniqueVisited);
+						INTEGER(aux_modeldim)[nUniqueVisited] = pmodel;
+						SetModel_glm(glm_fit, Rmodel_m, aux_beta, aux_se, aux_modelspace, aux_deviance, aux_R2, aux_Q, 
+							aux_Rintercept, prior_m, sampleprobs, aux_logmarg, aux_shrinkage, aux_priorprobs, nUniqueVisited);
+						++nUniqueVisited;
+						UNPROTECT(2);
+					}
+
+					aux_old_loc = aux_new_loc;
+					postold = postnew;
+					memcpy (modelold, model, sizeof(int)*p); // Copying an array of integers from model to modelold
+				}
+
+			}
+
+			thin_count++;
+		}
+
+		branch   = tree;        /* start at the root of the tree                      */
+		newmodel = 0;  
+		pmodel       = n_sure;
+		for (int i = 0; i < n; i++) { 
+			int bit = modelold[vars[i].index];  /* inclusion flag for current predictor  */
+
+			if (bit == 1) {
+				/* Want to follow the 'one' child.  If it is missing, this model has
+				* never been stored before — record that fact but keep going so that
+				* pmodel is still computed correctly.                                */
+				if (branch->one != NULL)
+					branch = branch->one;    /* descend one level                     */
+				else
+					newmodel = 1;            /* missing node → new (unseen) model     */
+			} else {
+				/* Analogous logic for 'zero' child (variable excluded). */
+				if (branch->zero != NULL)
+					branch = branch->zero;
+				else
+					newmodel = 1;
+			}
+
+			pmodel += bit;                   /* running count of included variables   */
+		}
+
+		if (newmodel == 1) {
+				
+			new_loc = nUnique;
+			/* Any model in tree belongs also to aux_tree*/
+			insert_model_tree (tree, vars, n, modelold, nUnique);
+			INTEGER(modeldim)[nUnique] = pmodel;
+
+			/* pull stats from the *aux_tree* arrays using aux_old_loc */
+			SetModel_gibbs(nUnique,	
+				REAL(aux_logmarg)[aux_old_loc], REAL(aux_shrinkage)[aux_old_loc], REAL(aux_priorprobs)[aux_old_loc],
+				logmarg, shrinkage, priorprobs, sampleprobs,
+				REAL(aux_deviance)[aux_old_loc], REAL(aux_R2)[aux_old_loc], REAL(aux_Q)[aux_old_loc], REAL(aux_Rintercept)[aux_old_loc],
+				deviance, R2, Q, Rintercept,
+				VECTOR_ELT(aux_beta, aux_old_loc), VECTOR_ELT(aux_se, aux_old_loc), VECTOR_ELT(aux_modelspace, aux_old_loc), 
+				beta, se, modelspace); 
+			++nUnique;
+
+		} 
+		else {
+			new_loc = branch->where;
+		} 
+		
+		old_loc = new_loc;
+		INTEGER (counts)[old_loc] += 1;
 		
 		for (i = 0; i < n; i++) {
 			// store in opposite order so nth variable is first
 			real_model[n-1-i] = (double) modelold[vars[i].index];
 			REAL(MCMCprobs)[vars[i].index] += (double) modelold[vars[i].index];
 		}
-	m++;
+
+		m++;
 	}
 
 	for (i = 0; i < n; i++) {
-		REAL(MCMCprobs)[vars[i].index] /= (double) m;
+		REAL(MCMCprobs)[vars[i].index] /= (double) m; /* m = number of stored samples... */
 	}
 
 	// Compute marginal probabilities
 	mcurrent = nUnique;
 	//		Rprintf("NumUnique Models Accepted %d \n", nUnique);
-	compute_modelprobs(modelprobs, logmarg, priorprobs,mcurrent);
+	compute_modelprobs(modelprobs, logmarg, priorprobs, mcurrent);
 	compute_margprobs(modelspace, modeldim, modelprobs, probs, mcurrent, p);
 	
 	INTEGER(NumUnique)[0] = nUnique;
@@ -337,88 +543,6 @@ SEXP glm_mcmc(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 	  SET_VECTOR_ELT(ANS, 15, resizeVector(Q, nUnique));
 	  SET_VECTOR_ELT(ANS, 16, resizeVector(Rintercept, nUnique));
 	}	  
-	
-	
-/*
-	// Compute marginal probabilities
-	mcurrent = nUnique;
-//	Rprintf("NumUnique Models Accepted %d \n", nUnique);
-	compute_modelprobs(modelprobs, logmarg, priorprobs,mcurrent);
-	compute_margprobs(modelspace, modeldim, modelprobs, probs, mcurrent, p);
-
-	INTEGER(NumUnique)[0] = nUnique;
-	SET_VECTOR_ELT(ANS, 0, Rprobs);
-	SET_STRING_ELT(ANS_names, 0, mkChar("probne0"));
-
-	
-	if (nUnique < nModels) {
-//	  Rprintf("MCMC Resizing\n");
-	  SETLENGTH(modelspace, nUnique);
-	  SETLENGTH(logmarg, nUnique);
-	  SETLENGTH(modelprobs, nUnique);
-	  SETLENGTH(priorprobs, nUnique);
-	  SETLENGTH(sampleprobs, nUnique);
-	  SETLENGTH(counts, nUnique);
-	  SETLENGTH(beta, nUnique);
-	  SETLENGTH(se, nUnique);
-	  SETLENGTH(deviance, nUnique);
-	  SETLENGTH(Q, nUnique);
-	  SETLENGTH(shrinkage, nUnique);
-	  SETLENGTH(modeldim, nUnique);
-	  SETLENGTH(R2, nUnique);
-	  SETLENGTH(Rintercept, nUnique); 
-	}
-
-	SET_VECTOR_ELT(ANS, 1, modelspace);
-	SET_STRING_ELT(ANS_names, 1, mkChar("which"));
-
-	SET_VECTOR_ELT(ANS, 2, logmarg);
-	SET_STRING_ELT(ANS_names, 2, mkChar("logmarg"));
-
-	SET_VECTOR_ELT(ANS, 3, modelprobs);
-	SET_STRING_ELT(ANS_names, 3, mkChar("postprobs"));
-
-	SET_VECTOR_ELT(ANS, 4, priorprobs);
-	SET_STRING_ELT(ANS_names, 4, mkChar("priorprobs"));
-
-	SET_VECTOR_ELT(ANS, 5, sampleprobs);
-	SET_STRING_ELT(ANS_names, 5, mkChar("sampleprobs"));
-
-	SET_VECTOR_ELT(ANS, 6, deviance);
-	SET_STRING_ELT(ANS_names, 6, mkChar("deviance"));
-
-	SET_VECTOR_ELT(ANS, 7, beta);
-	SET_STRING_ELT(ANS_names, 7, mkChar("mle"));
-
-	SET_VECTOR_ELT(ANS, 8, se);
-	SET_STRING_ELT(ANS_names, 8, mkChar("mle.se"));
-
-	SET_VECTOR_ELT(ANS, 9, shrinkage);
-	SET_STRING_ELT(ANS_names, 9, mkChar("shrinkage"));
-
-	SET_VECTOR_ELT(ANS, 10, modeldim);
-	SET_STRING_ELT(ANS_names, 10, mkChar("size"));
-
-	SET_VECTOR_ELT(ANS, 11, R2);
-	SET_STRING_ELT(ANS_names, 11, mkChar("R2"));
-
-	SET_VECTOR_ELT(ANS, 12, counts);
-	SET_STRING_ELT(ANS_names, 12, mkChar("freq"));
-
-	SET_VECTOR_ELT(ANS, 13, MCMCprobs);
-	SET_STRING_ELT(ANS_names, 13, mkChar("probne0.MCMC"));
-
-	SET_VECTOR_ELT(ANS, 14, NumUnique);
-	SET_STRING_ELT(ANS_names, 14, mkChar("n.Unique"));
-
-  SET_VECTOR_ELT(ANS, 15, Q);
-  SET_STRING_ELT(ANS_names, 15, mkChar("Q"));
-
-	SET_VECTOR_ELT(ANS, 16, Rintercept);
-	SET_STRING_ELT(ANS_names, 16, mkChar("intercept"));
-
-	setAttrib(ANS, R_NamesSymbol, ANS_names);
-*/
 
 	PutRNGstate();
 	UNPROTECT(nProtected);

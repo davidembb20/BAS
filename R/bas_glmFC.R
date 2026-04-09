@@ -304,7 +304,7 @@ bas.glmFC <- function(formula, family = binomial(link = "logit"),
   
   if (!inherits(modelprior, "prior")) stop("modelprior should be an object of class prior,  uniform(),  beta.binomial(), etc")
 
-  if (!(method %in% c("BAS", "deterministic", "MCMC", "MCMC+BAS", "AMCMC"))) {
+  if (!(method %in% c("BAS", "deterministic", "MCMC", "MCMC+BAS", "AMCMC", "Gibbs", "GibbsBVS"))) {
     stop(paste("No available sampling method:", method))
   }
   
@@ -525,9 +525,10 @@ bas.glmFC <- function(formula, family = binomial(link = "logit"),
 
   bestmodel <- as.integer(bestmodel)
 
-
   if (!GROW & method == "MCMC") method <- "MCMC_OLD"
   if (!GROW & method == "BAS") method <- "BAS_OLD"
+  if (!GROW & method == "Gibbs") method <- "Gibbs_grow"
+  if (!GROW & method == "GibbsBVS") method <- "GibbsBVS_grow"
   
   # p = k + sum_j Lj + 1, as it includes the intercept
   # Shouldn´t we adjust n.models to accomodate the new model space 
@@ -535,7 +536,8 @@ bas.glmFC <- function(formula, family = binomial(link = "logit"),
   if (is.null(n.models)) {
     # n.models <- min(2^p, 2^16) # # change to 2^p to force enumeration regardless p
     n.models <- min(2^(p-1), 2^16) # I´ll always include the intercept / change to 2^(p-1) to force enumeration regardless p
-    if (method == "MCMC")  n.models = min(n.models, n.models.init) 
+    if (method == "MCMC" | method == "Gibbs_grow" | method == "GibbsBVS_grow")  
+      n.models = min(n.models, n.models.init) 
     # FIXME add n.models.init as argument rather than specify here
   }
   if (is.null(MCMC.iterations)) {
@@ -604,7 +606,7 @@ bas.glmFC <- function(formula, family = binomial(link = "logit"),
   storage.mode(y) <- "double"
   
   # an R function that directly invokes a compiled C function.
-  # Added methods = c("Gibbs","GibbsBVS")
+  # Added methods = c("Gibbs","GibbsBVS", "Gibbs_grow", "GibbsBVS_grow")
   result <- switch(method,
     "MCMC_OLD" = .Call(C_glm_mcmc,
       RY = y, X = X,
@@ -666,6 +668,27 @@ bas.glmFC <- function(formula, family = binomial(link = "logit"),
       Rlaplace = as.integer(laplace),
       Rparents = parents
     ),
+    "Gibbs_grow" = .Call(C_glm_gibbssampler_grow,
+      RY = y, X = X,
+      Roffset = as.numeric(offset),
+      Rweights = as.numeric(weights),
+      Rprobinit = prob,
+      Rmodeldim = modeldim,
+      modelprior = modelprior,
+      betaprior = betaprior,
+      positions = positions,
+      levels = var_levels,
+      costs = var.costs,
+      Rbestmodel = bestmodel,
+      plocal = as.numeric (1.0 - prob.rw),
+      BURNIN_Iterations = as.integer(burnin.iterations),
+      MCMC_Iteration = as.integer(MCMC.iterations),
+      Rthin = as.integer(thin),
+      family = family, Rcontrol = control,
+      Rlaplace = as.integer(laplace),
+      Rparents = parents
+      Rexpand = as.numeric(expand)
+    ),
     "GibbsBVS" = .Call(C_glm_gibbsBVS,
       RY = y, X = X,
       Roffset = as.numeric(offset),
@@ -685,6 +708,26 @@ bas.glmFC <- function(formula, family = binomial(link = "logit"),
       Rlaplace = as.integer(laplace),
       Rparents = parents
     ),
+    "GibbsBVS_grow" = .Call(C_glm_gibbsBVS_grow,
+      RY = y, X = X,
+      Roffset = as.numeric(offset),
+      Rweights = as.numeric(weights),
+      Rprobinit = prob,
+      Rmodeldim = modeldim,
+      modelprior = modelprior,
+      betaprior = betaprior,
+      positions = positions,
+      levels = var_levels,
+      costs = var.costs,
+      Rbestmodel = bestmodel,
+      BURNIN_Iterations = as.integer(burnin.iterations),
+      MCMC_Iteration = as.integer(MCMC.iterations),
+      Rthin = as.integer(thin),
+      family = family, Rcontrol = control,
+      Rlaplace = as.integer(laplace),
+      Rparents = parents,
+      Rexpand = as.numeric(expand)
+    ),
     "BAS" = .Call(C_glm_sampleworep_grow,
       RY = y, X = X,
       Roffset = as.numeric(offset),
@@ -702,7 +745,8 @@ bas.glmFC <- function(formula, family = binomial(link = "logit"),
       family = family, Rcontrol = control,
       Rupdate = as.integer(update),
       Rlaplace = as.integer(laplace),
-      Rparents = parents
+      Rparents = parents,
+      Rexpand = as.numeric(expand)
     ),
     "BAS_OLD" = .Call(C_glm_sampleworep,
                   RY = y, X = X,
@@ -844,7 +888,7 @@ bas.glmFC <- function(formula, family = binomial(link = "logit"),
   )
   colnames(models_matrix) <- namesx # Includes the intercept...
 
-  if (method == "MCMC" | method == "MCMC_OLD" | method == "Gibbs" | method == "GibbsBVS") {
+  if (method == "MCMC" | method == "MCMC_OLD" | method == "Gibbs" | method == "GibbsBVS" | method == "Gibbs_grow" | method == "GibbsBVS_grow" ) {
     
     # Resampling the models found in MCMC to correct for the real set of competing models...
     if (modelprior$family == "SBSB") {new_priorprobs <- priorSBSB2 (models_matrix [, -1, drop = FALSE], positions)}
@@ -1031,7 +1075,7 @@ bas.glmFC <- function(formula, family = binomial(link = "logit"),
   names (pip_groups) <- as.character (diff_groups)
   result$pip_groups  <- pip_groups
 
-  if (method == "MCMC" | method == "MCMC_OLD" | method == "Gibbs" | method == "GibbsBVS") {
+  if (method == "MCMC" | method == "MCMC_OLD" | method == "Gibbs" | method == "GibbsBVS" | method == "Gibbs_grow" | method == "GibbsBVS_grow") {
 
     var_pip.RN <- as.vector (result$postprobs.RN %*% models_active_vars)
     names (var_pip.RN) <- depvars
@@ -1087,7 +1131,6 @@ bas.glmFC <- function(formula, family = binomial(link = "logit"),
 
 
 # Drop the null model from Jeffrey's prior
-
 .drop.null.bas <- function(object) {
   n.models <- object$n.models
 
@@ -1104,7 +1147,7 @@ bas.glmFC <- function(formula, family = binomial(link = "logit"),
     object$postprobs <- postprobs
 
     method <- eval(object$call$method)
-    if (method == "MCMC+BAS" | method == "MCMC" | method == "MCMC_OLD") {
+    if (method == "MCMC+BAS" | method == "MCMC" | method == "MCMC_OLD" | method == "Gibbs" | method == "GibbsBVS" | method == "Gibbs_grow" | method == "GibbsBVS_grow") {
       object$freq <- object$freq[-drop]
       object$probne0.MCMC <- as.vector(object$freq %*% which)/sum(object$freq)
     }

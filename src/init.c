@@ -31,6 +31,8 @@ extern SEXP glm_sampleworep_grow(SEXP, SEXP, SEXP, SEXP,SEXP, SEXP, SEXP, SEXP, 
 // added new functions
 extern SEXP glm_gibbssampler(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP);
 extern SEXP glm_gibbsBVS(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP);
+extern SEXP glm_gibbssampler_grow(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP);
+extern SEXP glm_gibbsBVS_grow(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP);
 // ---------------------------------------------------------------------------------
 
 extern SEXP deterministic(SEXP,SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP);
@@ -61,9 +63,11 @@ static const R_CallMethodDef CallEntries[] = {
   {"glm_mcmc_grow",     (DL_FUNC) &glm_mcmc_grow,     21}, 
   {"glm_mcmcbas",       (DL_FUNC) &glm_mcmcbas,       20},
   {"glm_sampleworep",   (DL_FUNC) &glm_sampleworep,   18},
-  {"glm_sampleworep_grow",(DL_FUNC) &glm_sampleworep_grow,   18},
+  {"glm_sampleworep_grow",(DL_FUNC) &glm_sampleworep_grow, 19},
   {"glm_gibbssampler",  (DL_FUNC) &glm_gibbssampler,  20},
   {"glm_gibbsBVS",      (DL_FUNC) &glm_gibbsBVS,      19},
+  {"glm_gibbssampler_grow",(DL_FUNC) &glm_gibbssampler, 21},
+  {"glm_gibbsBVS_grow", (DL_FUNC) &glm_gibbsBVS,      20},
 //  {"mcmc",              (DL_FUNC) &mcmc,              20},
   {"mcmc_grow",         (DL_FUNC) &mcmc_grow,         21},
   {"amcmc",             (DL_FUNC) &amcmc,             21},
@@ -71,7 +75,7 @@ static const R_CallMethodDef CallEntries[] = {
   {"deterministic",     (DL_FUNC) &deterministic,     11},
   {"mcmcbas",           (DL_FUNC) &mcmcbas,           21},
   {"sampleworep_new",   (DL_FUNC) &sampleworep_new,   15},
-  {"sampleworep_grow",   (DL_FUNC) &sampleworep_grow,   15},
+  {"sampleworep_grow",   (DL_FUNC) &sampleworep_grow, 15},
   {NULL, NULL, 0}
 };
 
