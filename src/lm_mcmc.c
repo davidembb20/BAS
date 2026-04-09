@@ -134,7 +134,7 @@ SEXP mcmc(SEXP Y, SEXP X, SEXP Rweights, SEXP Rprobinit, SEXP Rmodeldim,
 
 	int nobs = LENGTH(Y);
 	int p = INTEGER(getAttrib(X,R_DimSymbol))[1];
-	int k = LENGTH(modelprobs);
+	// int k = LENGTH(modelprobs);
 	//	double lambda=REAL(LAMBDA)[0];
 	//	double delta = REAL(DELTA)[0];
 	double alpha = REAL(Ralpha)[0];

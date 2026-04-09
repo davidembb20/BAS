@@ -13,8 +13,7 @@ SEXP glm_mcmc_grow(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 		  SEXP positions, SEXP levels, SEXP costs,
 		  SEXP Rbestmodel,  SEXP plocal,
 	      SEXP BURNIN_Iterations, SEXP MCMC_Iterations, SEXP Rthin, 
-	      SEXP family, SEXP Rcontrol, SEXP Rlaplace, SEXP Rparents, SEXP Rexpand
-			  )
+	      SEXP family, SEXP Rcontrol, SEXP Rlaplace, SEXP Rparents, SEXP Rexpand)
 {
 
 	int nModels0 = INTEGER(RnModels)[0];  // initial guess on number of models to return
@@ -125,7 +124,7 @@ SEXP glm_mcmc_grow(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 	setAttrib(ANS, R_NamesSymbol, ANS_names);
 	
 	
-	double *probs, MH=0.0, prior_m=1.0, shrinkage_m, logmarg_m, postold, postnew;
+	double *probs, MH=0.0, prior_m=1.0, logmarg_m, postold, postnew; // shrinkage_m
 	int i, m, n, pmodel_old, *bestmodel;
 	int mcurrent, n_sure;
 
@@ -180,9 +179,8 @@ SEXP glm_mcmc_grow(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 
 	prior_m  = compute_prior_probs_MCMC (model, p, modelprior, POS, nofvars, LVL, costs_mat, n_obs);
 
-	// Evaluate logmargy and shrinkage
-	logmargy = REAL(getListElement(getListElement(glm_fit, "lpy"),"lpY"))[0];
-	shrinkage_m = REAL(getListElement(getListElement(glm_fit, "lpy"),"shrinkage"))[0];
+	logmarg_m = REAL(getListElement(getListElement(glm_fit, "lpy"),"lpY"))[0];
+	//shrinkage_m = REAL(getListElement(getListElement(glm_fit, "lpy"),"shrinkage"))[0];
 
 	SetModel_glm(glm_fit, Rmodel_m, beta, se, modelspace, deviance, R2, Q,Rintercept, 
 				 prior_m, sampleprobs, logmarg, shrinkage, priorprobs, m);
@@ -240,8 +238,7 @@ SEXP glm_mcmc_grow(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 			prior_m  = compute_prior_probs_MCMC (model, p, modelprior, POS, nofvars, LVL, costs_mat, n_obs);
 
 			logmarg_m = REAL(getListElement(getListElement(glm_fit, "lpy"),"lpY"))[0];
-			shrinkage_m = REAL(getListElement(getListElement(glm_fit, "lpy"),
-							"shrinkage"))[0];
+			//shrinkage_m = REAL(getListElement(getListElement(glm_fit, "lpy"),"shrinkage"))[0];
 
 			postnew = logmarg_m + log(prior_m);
 		} else {

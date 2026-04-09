@@ -8,6 +8,9 @@
 /* Version of glm.fit that can be called directly from R or C*/
 
 // [[register]]
+
+/* Not being used anywhere (and not updated)*/
+/*
 SEXP glm_fit(SEXP RX, SEXP RY,SEXP family, SEXP Roffset, SEXP Rweights, SEXP Rpriorcoef, SEXP Rcontrol)
 {
   int   *xdims = INTEGER(getAttrib(RX,R_DimSymbol)), n=xdims[0], p = xdims[1];
@@ -62,7 +65,7 @@ SEXP glm_fit(SEXP RX, SEXP RY,SEXP family, SEXP Roffset, SEXP Rweights, SEXP Rpr
   betapriorptr *betapriorfamily;
   betapriorfamily = make_betaprior_structure(Rpriorcoef, family);
   
-//  char  trans[]="N";
+  //  char  trans[]="N";
 
   tol = fmin(1e-07, REAL(getListElement(Rcontrol,"epsilon"))[0]/1000);
 
@@ -81,12 +84,12 @@ SEXP glm_fit(SEXP RX, SEXP RY,SEXP family, SEXP Roffset, SEXP Rweights, SEXP Rpr
       coefprior->g = g_gprior;
     else
       coefprior->g = g_EB_local;
-}
+  }
   if  (strcmp(coefprior->class, "IC") == 0) {
     coefprior->shrinkage = no_shrinkage;
     coefprior->log_marginal_likelihood = log_marginal_likelihood_IC;
     coefprior->g = no_g;
-}
+  }
 
 
     glmfamily->initialize(Y, mu, weights, n);
@@ -212,6 +215,7 @@ SEXP glm_fit(SEXP RX, SEXP RY,SEXP family, SEXP Roffset, SEXP Rweights, SEXP Rpr
   UNPROTECT(nProtected);
 
   return(ANS);
-  }
+}
+*/
 
 

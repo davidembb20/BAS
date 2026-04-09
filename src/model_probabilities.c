@@ -129,9 +129,9 @@ void compute_margprobs(SEXP modelspace, SEXP modeldim, SEXP Rmodelprobs, double 
 void compute_margprobs_Bayes_BAS_MCMC(SEXP modelspace, SEXP modeldim, SEXP Rmodelprobs, SEXP Rprobs, SEXP Rsampleprobs, 
                        int M, int p, double eta, double NC)
 {
-  int m, j, *model, *n;
+  int m, j, *model; // , *n;
   double *modelprobs;
-  double *beta, probNotInS = 1.0;
+  //double *beta, probNotInS = 1.0;
   SEXP samplemargs = PROTECT(duplicate(Rprobs)); 
   modelprobs = REAL(Rmodelprobs);
   
@@ -225,7 +225,7 @@ double compute_sample_probs_bernoulli(SEXP Rprobs, int *model, int p) {
   return(pigamma);
 }
 
-/*Same name as the newer version (uncomment in the future)
+/* Used only in lm*.c. However, we´re only focusing on adjusting BAS to factors in GLMs. For linear regression, work in the future needs to be done. */
 double compute_prior_probs(int *model, int modeldim, int p, SEXP modelprior, int noInclusionIs1) {
   const char *family;
   double *hyper_parameters, priorprob = 1.0;
@@ -242,73 +242,6 @@ double compute_prior_probs(int *model, int modeldim, int p, SEXP modelprior, int
   // reduce the model space by the number of predictors that are always included 
   p -= noInclusionIs1;
   modeldim -= noInclusionIs1;
-
-  if  (strcmp(family, "Beta-Binomial") == 0)
-    priorprob = beta_binomial(modeldim, p, hyper_parameters);
-  if  (strcmp(family, "Trunc-Beta-Binomial") == 0)
-    priorprob = trunc_beta_binomial(modeldim, p, hyper_parameters);
-  if  (strcmp(family, "Trunc-Poisson") == 0)
-    priorprob = trunc_poisson(modeldim, p, hyper_parameters);
-  if  (strcmp(family, "Trunc-Power-Prior") == 0)
-    priorprob = trunc_power_prior(modeldim, p, hyper_parameters);
-// Need to add
-//  if (strcmp(family, "Hereditary") == 0)
-//    priorprob = Hereditary(model, p, hyper_parameters);
-  return(priorprob);
-}
-*/
-
-/*Same name as the newer version (uncomment in the future)
-double compute_prior_probs(int *model, int modeldim, int p, SEXP modelprior, int noInclusionIs1) {
-  const char *family;
-  double *hyper_parameters, priorprob = 1.0;
-
-
-  family = CHAR(STRING_ELT(getListElement(modelprior, "family"),0));
-  hyper_parameters = REAL(getListElement(modelprior,"hyper.parameters"));
-
-  // do not reduce p by the number of predictors that are always included
-  // Gitub issue # 87
-  if (strcmp(family, "Bernoulli") == 0)
-    priorprob = Bernoulli(model, p, hyper_parameters);
-  
-  // reduce the model space by the number of predictors that are always included 
-  p -= noInclusionIs1;
-  modeldim -= noInclusionIs1;
-
-  if  (strcmp(family, "Beta-Binomial") == 0)
-    priorprob = beta_binomial(modeldim, p, hyper_parameters);
-  if  (strcmp(family, "Trunc-Beta-Binomial") == 0)
-    priorprob = trunc_beta_binomial(modeldim, p, hyper_parameters);
-  if  (strcmp(family, "Trunc-Poisson") == 0)
-    priorprob = trunc_poisson(modeldim, p, hyper_parameters);
-  if  (strcmp(family, "Trunc-Power-Prior") == 0)
-    priorprob = trunc_power_prior(modeldim, p, hyper_parameters);
-// Need to add
-//  if (strcmp(family, "Hereditary") == 0)
-//    priorprob = Hereditary(model, p, hyper_parameters);
-  return(priorprob);
-}
-*/
-
-/* I´m using this version, as changes still need to be made in bas_glmFC.R.
-   This issue will be dealt with in the future                             */
-double compute_prior_probs(int *model, int modeldim, int p, SEXP modelprior) {
-  const char *family;
-  double *hyper_parameters, priorprob = 1.0;
-
-
-  family = CHAR(STRING_ELT(getListElement(modelprior, "family"),0));
-  hyper_parameters = REAL(getListElement(modelprior,"hyper.parameters"));
-
-  // do not reduce p by the number of predictors that are always included
-  // Gitub issue # 87
-  if (strcmp(family, "Bernoulli") == 0)
-    priorprob = Bernoulli(model, p, hyper_parameters);
-  
-  // reduce the model space by the number of predictors that are always included 
-  // p -= noInclusionIs1;
-  // modeldim -= noInclusionIs1;
 
   if  (strcmp(family, "Beta-Binomial") == 0)
     priorprob = beta_binomial(modeldim, p, hyper_parameters);
@@ -325,7 +258,8 @@ double compute_prior_probs(int *model, int modeldim, int p, SEXP modelprior) {
 }
 
 /* When hyper = 0.5 for all variables, it´s the familiar uniform model prior*/
-double Bernoulli(gsl_vector *index, //int *model,
+/* For factors, use instead ConstConst (CC)*/
+double Bernoulli(int *model, // gsl_vector *index
                  int p, double *hyper) {
   double prior; /* Prior Model Probability*/
   int j;
@@ -333,7 +267,7 @@ double Bernoulli(gsl_vector *index, //int *model,
   /* Loop skips the intercept */
   for (j=1, prior=1.; j < p; j++) {
 
-    int model_j = (int) gsl_vector_get(index, j); // Binary inclusion status
+    // int model_j = (int) gsl_vector_get(index, j); // Binary inclusion status
     
     /* hyper [j] = PriorIP for variable j */
     switch(model[j]) {

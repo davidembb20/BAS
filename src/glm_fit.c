@@ -7,10 +7,9 @@
 
 
 /* Functions for getting MLEs and Bayes Estimates for each model */
-
 SEXP glm_FitModel(SEXP RX, SEXP RY, SEXP Rmodel_m,  //input data
                   SEXP Roffset, SEXP Rweights, glmstptr * glmfamily, SEXP Rcontrol,
-                  SEXP Rlaplace,  betapriorptr * betapriorfamily) { //parameters
+                  SEXP Rlaplace,  betapriorptr * betapriorfamily, SEXP positions, SEXP levels) { //parameters
   
   int nprotected = 0;
   int *model_m = INTEGER(Rmodel_m);
@@ -99,7 +98,8 @@ int model_rank (int *index, int p, gsl_matrix *positions, int nofvars, int *leve
 }
 
 SEXP gglm_lpy(SEXP RX, SEXP RY, SEXP Rcoef, SEXP Rmu, SEXP Rdeviance, SEXP Rwts, 
-              glmstptr * glmfamily, betapriorptr * betapriorfamily, SEXP  Rlaplace) {
+              glmstptr * glmfamily, betapriorptr * betapriorfamily, SEXP  Rlaplace,
+              SEXP Rmodel_m, SEXP positions, SEXP levels) {
   
   int *xdims = INTEGER(getAttrib(RX,R_DimSymbol));
   int n=xdims[0], p = xdims[1];

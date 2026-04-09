@@ -236,7 +236,7 @@ double intrinsic_glm_logmarg(SEXP hyperparams, int pmodel, double W,
 }
 
 double intrinsic_glm_shrinkage(SEXP hyperparams, int pmodel, double W, int Laplace ) {
-  double a, b, s, r, v, theta, n, p, u, shrinkage;
+  double a, b, s, r, v, theta, n, p, shrinkage; // u,
 
   a = REAL(getListElement(hyperparams, "alpha"))[0];
   b = REAL(getListElement(hyperparams, "beta"))[0];

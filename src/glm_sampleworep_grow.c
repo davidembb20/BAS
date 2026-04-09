@@ -109,7 +109,7 @@ SEXP glm_sampleworep_grow(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 	
 	
 //	Rprintf("Start Computing\n");
-	double *probs,logmargy, shrinkage_m;
+	double *probs; //,logmargy, shrinkage_m;
 	int i;
 
 	glmstptr *glmfamily;
@@ -178,8 +178,8 @@ SEXP glm_sampleworep_grow(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 	double prior_m  = compute_prior_probs_enumeration(index, p, modelprior, POS, nofvars, LVL, costs_mat, n_obs);
 	gsl_vector_free(index);
 
-	logmargy = REAL(getListElement(getListElement(glm_fit, "lpy"),"lpY"))[0];
-	shrinkage_m = REAL(getListElement(getListElement(glm_fit, "lpy"), "shrinkage"))[0];
+	//logmargy = REAL(getListElement(getListElement(glm_fit, "lpy"),"lpY"))[0];
+	//shrinkage_m = REAL(getListElement(getListElement(glm_fit, "lpy"), "shrinkage"))[0];
 
 	SetModel_glm(glm_fit, Rmodel_m, beta, se, modelspace, deviance, R2, Q, Rintercept, 
 	prior_m, sampleprobs, logmarg, shrinkage, priorprobs, m);
@@ -222,8 +222,8 @@ SEXP glm_sampleworep_grow(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 		double prior_m  = compute_prior_probs_enumeration(index, p, modelprior, POS, nofvars, LVL, costs_mat, n_obs);
 		gsl_vector_free(index);
 
-		logmargy = REAL(getListElement(getListElement(glm_fit, "lpy"),"lpY"))[0];
-		shrinkage_m = REAL(getListElement(getListElement(glm_fit, "lpy"), "shrinkage"))[0];
+		//logmargy = REAL(getListElement(getListElement(glm_fit, "lpy"),"lpY"))[0];
+		//shrinkage_m = REAL(getListElement(getListElement(glm_fit, "lpy"), "shrinkage"))[0];
 
 		SetModel_glm(glm_fit, Rmodel_m, beta, se, modelspace, deviance, R2, Q,Rintercept, 
 					 prior_m, sampleprobs, logmarg, shrinkage, priorprobs, m);

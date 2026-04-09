@@ -118,14 +118,20 @@ SEXP glm_gibbsBVS_grow(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 	SET_STRING_ELT(ANS_names, 16, mkChar("intercept"));
 	
 	
-	
 	setAttrib(ANS, R_NamesSymbol, ANS_names);
+
+	int p = INTEGER(getAttrib(X,R_DimSymbol))[1];
+	int burnin = INTEGER(BURNIN_Iterations)[0];
+	int thin = INTEGER(Rthin)[0];
+	int mcmc_size = (INTEGER(MCMC_Iterations)[0] / thin) + 1; // Rounding up
+	
 	
 	// Stuff for the auxiliary tree
 	SEXP aux_shrinkage   = PROTECT(allocVector(REALSXP, ((burnin + mcmc_size) * p))); ++nProtected;
 	SEXP aux_priorprobs  = PROTECT(allocVector(REALSXP, ((burnin + mcmc_size) * p))); ++nProtected; 
 	SEXP aux_logmarg     = PROTECT(allocVector(REALSXP, ((burnin + mcmc_size) * p))); ++nProtected;
 	SEXP aux_modeldim 	 = PROTECT(allocVector(INTSXP,  ((burnin + mcmc_size) * p))); ++nProtected; 
+	SEXP aux_modelspace  = PROTECT(allocVector(VECSXP,  ((burnin + mcmc_size) * p))); ++nProtected;
 	SEXP aux_beta 		 = PROTECT(allocVector(VECSXP,  ((burnin + mcmc_size) * p))); ++nProtected;
 	SEXP aux_se 		 = PROTECT(allocVector(VECSXP,  ((burnin + mcmc_size) * p))); ++nProtected;
 	SEXP aux_R2 		 = PROTECT(allocVector(REALSXP, ((burnin + mcmc_size) * p))); ++nProtected;
@@ -133,7 +139,7 @@ SEXP glm_gibbsBVS_grow(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 	SEXP aux_Q           = PROTECT(allocVector(REALSXP, ((burnin + mcmc_size) * p))); ++nProtected;
 	SEXP aux_Rintercept  = PROTECT(allocVector(REALSXP, ((burnin + mcmc_size) * p))); ++nProtected;
 	
-	double *probs, prior_m=1.0, shrinkage_m, logmarg_m, postold, postnew;
+	double *probs, prior_m=1.0, logmarg_m, postold, postnew; // shrinkage_m
 	int i, m, n, *bestmodel;
 	int mcurrent, n_sure;
 
@@ -143,13 +149,6 @@ SEXP glm_gibbsBVS_grow(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 	betapriorptr *betapriorfamily;
 	betapriorfamily = make_betaprior_structure(betaprior, family);
 
-
-	//get dimensions of all variables
-	int p = INTEGER(getAttrib(X,R_DimSymbol))[1];
-	
-	int thin = INTEGER(Rthin)[0];
-	int burnin = INTEGER(BURNIN_Iterations)[0];
-	int mcmc_size = (INTEGER(MCMC_Iterations)[0] / thin) + 1; // Rounding up
 
 	struct Var *vars = (struct Var *) R_alloc(p, sizeof(struct Var)); // Info about the model variables.
 	
@@ -196,9 +195,9 @@ SEXP glm_gibbsBVS_grow(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 
 	prior_m  = compute_prior_probs_MCMC (model, p, modelprior, POS, nofvars, LVL, costs_mat, n_obs);
 
-	// Evaluate logmargy and shrinkage
-	logmargy = REAL(getListElement(getListElement(glm_fit, "lpy"),"lpY"))[0];
-	shrinkage_m = REAL(getListElement(getListElement(glm_fit, "lpy"),"shrinkage"))[0];
+	// Evaluate logmarg_m and shrinkage_m
+	logmarg_m= REAL(getListElement(getListElement(glm_fit, "lpy"),"lpY"))[0];
+	//shrinkage_m = REAL(getListElement(getListElement(glm_fit, "lpy"),"shrinkage"))[0];
 
 	/* Set in Output Tree */ 
 	SetModel_glm(glm_fit, Rmodel_m, beta, se, modelspace, deviance, R2, Q, Rintercept, 
@@ -283,7 +282,7 @@ SEXP glm_gibbsBVS_grow(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 				glm_fit = PROTECT(glm_FitModel(X, Y, Rmodel_m, Roffset, Rweights, glmfamily,
 											   Rcontrol, Rlaplace, betapriorfamily, positions, levels));
 				logmarg_m    = REAL(getListElement(getListElement(glm_fit, "lpy"),"lpY"))[0];
-				shrinkage_m = REAL(getListElement(getListElement(glm_fit, "lpy"), "shrinkage"))[0];
+				//shrinkage_m = REAL(getListElement(getListElement(glm_fit, "lpy"), "shrinkage"))[0];
 				
 				prior_m     = compute_prior_probs_MCMC (model, p, modelprior, POS, nofvars, LVL, costs_mat, n_obs);
 
@@ -332,7 +331,7 @@ SEXP glm_gibbsBVS_grow(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 
 
 	m++;
-	while (m < (INTEGER(MCMC_Iterations)[0] / thin)) {
+	while (m < mcmc_size) {
 		
 		/* Refreshing the permutation vector at each iteration … */		
 
@@ -391,7 +390,7 @@ SEXP glm_gibbsBVS_grow(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 					glm_fit      = PROTECT(glm_FitModel(X, Y, Rmodel_m, Roffset, Rweights, glmfamily,
 														Rcontrol, Rlaplace, betapriorfamily, positions, levels));
 					logmarg_m     = REAL(getListElement(getListElement(glm_fit, "lpy"),"lpY"))[0];
-					shrinkage_m  = REAL(getListElement(getListElement(glm_fit, "lpy"), "shrinkage"))[0];
+					//shrinkage_m  = REAL(getListElement(getListElement(glm_fit, "lpy"), "shrinkage"))[0];
 					
 					prior_m      = compute_prior_probs_MCMC (model, p, modelprior, POS, nofvars, LVL, costs_mat, n_obs);
 
@@ -486,7 +485,7 @@ SEXP glm_gibbsBVS_grow(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 		} 
 		
 		old_loc = new_loc;
-		INTEGER (counts)[old_loc] += 1;
+		INTEGER (Rcounts)[old_loc] += 1;
 
 		for (i = 0; i < n; i++) {
 			// store in opposite order so nth variable is first

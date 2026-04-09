@@ -153,19 +153,10 @@ void SetModel_gibbs(int m,
   SEXP beta_m, SEXP se_m, SEXP modelspace_m,
   SEXP beta, SEXP se, SEXP modelspace);
 
-/* Changed by David*/
-double Bernoulli(gsl_vector *index, int p, double *hyper); /* int *model -> gsl_vector *index */
-double compute_prior_probs(int *model, int modeldim, int p, SEXP modelprior); /* In the future, might give a different name to this */
-// double compute_prior_probs(int *model, int modeldim, int p, SEXP modelprior, int noInclusionIs1); /* Old */ 
-SEXP glm_FitModel(SEXP RX, SEXP RY, SEXP Rmodel_m, //input data
-                  SEXP Roffset, SEXP Rweights, glmstptr * glmfamily, SEXP Rcontrol,
-                  SEXP Rlaplace, betapriorptr * betapriorfamily, SEXP positions, SEXP levels);
-SEXP gglm_lpy(SEXP RX, SEXP RY,SEXP Rcoef, SEXP Rmu, SEXP Rdeviance, SEXP Rweights,
-              glmstptr * glmfamily, betapriorptr * betapriorfamily, SEXP Rlaplace,
-              SEXP Rmodel_m, SEXP positions, SEXP levels);
-
 
 /* Same */
+double Bernoulli(int *model, int p, double *hyper); /* gsl_vector *index */ 
+double compute_prior_probs(int *model, int modeldim, int p, SEXP modelprior, int noInclusionIs1); /* Used in lm*.c only */
 void SetModel_glm(SEXP glm_fit, SEXP Rmodel_m, SEXP beta, SEXP se, SEXP modelspace,
                   SEXP deviance, SEXP R2, SEXP Q, SEXP Rintercept, 
                   double prior_m, SEXP sampleprobs, SEXP logmarg, SEXP shrinkage, SEXP priorprobs,
@@ -457,6 +448,15 @@ double FitModel(SEXP Rcoef_m, SEXP Rse_m, double *XtY, double *XtX, int *model_m
                 int nobs, int m, double *pmse_m, int *rank_m, int pivot, double tol);
 
 SEXP glm_bas(SEXP RX, SEXP RY, glmstptr * family, SEXP Roffset, SEXP Rweights, SEXP Rcontrol);
+
+/* Changed by David */
+SEXP glm_FitModel(SEXP RX, SEXP RY, SEXP Rmodel_m, //input data
+                  SEXP Roffset, SEXP Rweights, glmstptr * glmfamily, SEXP Rcontrol,
+                  SEXP Rlaplace, betapriorptr * betapriorfamily, SEXP positions, SEXP levels);
+SEXP gglm_lpy(SEXP RX, SEXP RY,SEXP Rcoef, SEXP Rmu, SEXP Rdeviance, SEXP Rweights,
+              glmstptr * glmfamily, betapriorptr * betapriorfamily, SEXP Rlaplace,
+              SEXP Rmodel_m, SEXP positions, SEXP levels);
+
 
 SEXP resizeVector(SEXP x, R_xlen_t len);
 SEXP xlengthgets(SEXP x, R_xlen_t len);

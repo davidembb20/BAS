@@ -55,66 +55,66 @@ SEXP resizeVector(SEXP x, R_xlen_t len_new)
     else names = R_NilValue;	/*- just for -Wall --- should we do this ? */
 
 switch (TYPEOF(x)) {
-case NILSXP:
-  break;
-case LGLSXP:
-case INTSXP:
-   ival = INTEGER(rval);
-   if (lenx < len_new) // fill rest with NAs
-     for (i = lenx; i < len_new; i++) {
-       INTEGER(rval)[i] = NA_INTEGER;
-       }
-   memcpy(ival, INTEGER(x), fmin2(len_new,lenx) * sizeof(int));
-   break;
-case REALSXP:
-   dval = REAL(rval);
-   if (lenx < len_new) // fill rest with NAs
-     for (i = len_new; i < lenx; i++) {
-       REAL(rval)[i] = NA_REAL;
-       }
-   memcpy(dval, REAL(x), fmin2(len_new,lenx) * sizeof(double));
-   break;
-case CPLXSXP:
-  for (i = 0; i < len_new; i++)
-    if (i < lenx) {
-      COMPLEX(rval)[i] = COMPLEX(x)[i];
-    }
-    else {
-      COMPLEX(rval)[i].r = NA_REAL;
-      COMPLEX(rval)[i].i = NA_REAL;
+  case NILSXP:
+    break;
+  case LGLSXP:
+  case INTSXP:
+    ival = INTEGER(rval);
+    if (lenx < len_new) // fill rest with NAs
+      for (i = lenx; i < len_new; i++) {
+        INTEGER(rval)[i] = NA_INTEGER;
+        }
+    memcpy(ival, INTEGER(x), fmin2(len_new,lenx) * sizeof(int));
+    break;
+  case REALSXP:
+    dval = REAL(rval);
+    if (lenx < len_new) // fill rest with NAs
+      for (i = len_new; i < lenx; i++) {
+        REAL(rval)[i] = NA_REAL;
+        }
+    memcpy(dval, REAL(x), fmin2(len_new,lenx) * sizeof(double));
+    break;
+  case CPLXSXP:
+    for (i = 0; i < len_new; i++)
+      if (i < lenx) {
+        COMPLEX(rval)[i] = COMPLEX(x)[i];
+      }
+      else {
+        COMPLEX(rval)[i].r = NA_REAL;
+        COMPLEX(rval)[i].i = NA_REAL;
+      }
+      break;
+  case STRSXP:
+    for (i = 0; i < len_new; i++)
+      if (i < lenx) {
+        SET_STRING_ELT(rval, i, STRING_ELT(x, i));
+      }
+      else
+        SET_STRING_ELT(rval, i, NA_STRING);
+      break;
+  case LISTSXP:
+    for (t = rval; t != R_NilValue; t = CDR(t), x = CDR(x)) {
+      SETCAR(t, CAR(x));
+      SET_TAG(t, TAG(x));
     }
     break;
-case STRSXP:
-  for (i = 0; i < len_new; i++)
-    if (i < lenx) {
-      SET_STRING_ELT(rval, i, STRING_ELT(x, i));
-    }
-    else
-      SET_STRING_ELT(rval, i, NA_STRING);
-    break;
-case LISTSXP:
-  for (t = rval; t != R_NilValue; t = CDR(t), x = CDR(x)) {
-    SETCAR(t, CAR(x));
-    SET_TAG(t, TAG(x));
-  }
-  break;
-case VECSXP:
-  for (i = 0; i < len_new; i++)
-    if (i < lenx) {
-      SET_VECTOR_ELT(rval, i, VECTOR_ELT(x, i));
-    }
-    break;
-case RAWSXP:
-  for (i = 0; i < len_new; i++)
-    if (i < lenx) {
-      RAW(rval)[i] = RAW(x)[i];
-    }
-    else
-      RAW(rval)[i] = (Rbyte) 0;
-    break;
-default:
-  error("cannot set length of object of type '%s'",
-        type2char(TYPEOF(x)));
+  case VECSXP:
+    for (i = 0; i < len_new; i++)
+      if (i < lenx) {
+        SET_VECTOR_ELT(rval, i, VECTOR_ELT(x, i));
+      }
+      break;
+  case RAWSXP:
+    for (i = 0; i < len_new; i++)
+      if (i < lenx) {
+        RAW(rval)[i] = RAW(x)[i];
+      }
+      else
+        RAW(rval)[i] = (Rbyte) 0;
+      break;
+  default:
+    error("cannot set length of object of type '%s'",
+          type2char(TYPEOF(x)));
 }
 
 if (xnames != R_NilValue) {

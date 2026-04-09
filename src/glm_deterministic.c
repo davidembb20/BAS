@@ -4,60 +4,6 @@
 // SPDX-License-Identifier: GPL-3.0
 //
 #include "bas.h"
-#include <gsl/gsl_vector.h> // GSL-ADD 
-#include <gsl/gsl_matrix.h> // GSL-ADD 
-
-
-/* ---------- helpers: turn SEXPs into GSL objects ---------------------  */
-
-/* Converts an R logical / integer matrix (column-major) to a gsl_matrix
-   in row-major order.  (for positions)          */
-gsl_matrix * sexp_to_gsl_matrix(SEXP m)
-{
-    if (TYPEOF(m) != REALSXP && TYPEOF(m) != INTSXP)
-        error("'positions' and 'var.costs' must be integer or numeric matrices");
-
-    if (!isMatrix(m))
-        error("'m' must be a matrix");
-
-    int *dim = INTEGER(getAttrib(m, R_DimSymbol));
-    const int nrow = dim[0], ncol = dim[1];
-
-    gsl_matrix *M = gsl_matrix_alloc(nrow, ncol);
-
-    if (TYPEOF(m) == INTSXP) {
-        int *src = INTEGER(m);  // R matrix is column-major
-        for (int j = 0; j < ncol; ++j)
-            for (int i = 0; i < nrow; ++i)
-                gsl_matrix_set(M, i, j, (double)src[i + nrow * j]);
-    } else {  // REALSXP
-        double *src = REAL(m);
-        for (int j = 0; j < ncol; ++j)
-            for (int i = 0; i < nrow; ++i)
-                gsl_matrix_set(M, i, j, src[i + nrow * j]);
-    }
-
-    return M;
-}
-
-/* Converts an R integer / numeric vector to a gsl_vector (for levels)  */
-gsl_vector * sexp_to_gsl_vector (SEXP v) /* >>> GSL-ADD */
-{
-    if (TYPEOF(v) != INTSXP && TYPEOF(v) != REALSXP)
-        error("`levels' must be a numeric/integer vector");
-
-    const int len = LENGTH(v);
-    gsl_vector *g = gsl_vector_alloc(len);
-
-    if (TYPEOF(v) == INTSXP)
-        for (int i = 0; i < len; ++i)
-            gsl_vector_set(g, i, (double)INTEGER(v)[i]);
-    else
-        for (int i = 0; i < len; ++i)
-            gsl_vector_set(g, i, REAL(v)[i]);
-
-    return g;
-}
 
 
 int topk(Bit **models, double *prob, int k, struct Var *vars, int n, int p);
@@ -129,7 +75,7 @@ SEXP glm_deterministic(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 	memset(INTEGER(modeldim), 0, sizeof(int) *nModels);
 	
 ;
-	double *probs,shrinkage_m,logmargy;
+	double *probs;
 
 	//get dimensions of all variables
 	int p = INTEGER(getAttrib(X,R_DimSymbol))[1]; // includes the intercept
@@ -165,7 +111,6 @@ SEXP glm_deterministic(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 		GetModel_m(Rmodel_m, model, p); // active variables indices
 		
 		// glm_fit: list with 2 lists: "fit" or "lpy"
-		//evaluate logmargy and shrinkage
 		SEXP glm_fit = PROTECT(glm_FitModel(X, Y, Rmodel_m, Roffset, Rweights,
 						    glmfamily, Rcontrol, Rlaplace, betapriorfamily, positions, levels));
 		

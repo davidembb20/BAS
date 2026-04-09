@@ -62,7 +62,7 @@ SEXP glm_mcmcbas(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 	memset(REAL(R2), 0.0, sizeof(double) *nModels);
 	
 
-	double *probs, MH=0.0, prior_m=1.0,shrinkage_m, logmargy, postold, postnew;
+	double *probs, MH=0.0, prior_m=1.0, logmargy, postold, postnew; // shrinkage_m
 	int i, m, n, pmodel_old, *bestmodel;
 	int mcurrent, n_sure;
 
@@ -116,9 +116,9 @@ SEXP glm_mcmcbas(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 
 	prior_m  = compute_prior_probs_MCMC (model, p, modelprior, POS, nofvars, LVL, costs_mat, n_obs);
 
-	// Evaluate logmargy and shrinkage
+	// Evaluate logmargy
 	logmargy = REAL(getListElement(getListElement(glm_fit, "lpy"),"lpY"))[0];
-	shrinkage_m = REAL(getListElement(getListElement(glm_fit, "lpy"),"shrinkage"))[0];
+	// shrinkage_m = REAL(getListElement(getListElement(glm_fit, "lpy"),"shrinkage"))[0];
 
 	SetModel_glm(glm_fit, Rmodel_m, beta, se, modelspace, deviance, R2, Q,Rintercept, 
 				 prior_m, sampleprobs, logmarg, shrinkage, priorprobs, m);
@@ -175,7 +175,7 @@ SEXP glm_mcmcbas(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 			prior_m  = compute_prior_probs_MCMC (model, p, modelprior, POS, nofvars, LVL, costs_mat, n_obs);
 
 			logmargy = REAL(getListElement(getListElement(glm_fit, "lpy"),"lpY"))[0];
-			shrinkage_m = REAL(getListElement(getListElement(glm_fit, "lpy"), "shrinkage"))[0];
+			// shrinkage_m = REAL(getListElement(getListElement(glm_fit, "lpy"), "shrinkage"))[0];
 
 			postnew = logmargy + log(prior_m);
 		}
@@ -188,7 +188,7 @@ SEXP glm_mcmcbas(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 		if (unif_rand() < MH) {
 		  if (newmodel == 1)  {
 		    new_loc = nUnique;
-			INTEGER(Rcounts)[new_loc] = 0;
+			INTEGER(counts)[new_loc] = 0;
 		    insert_model_tree(tree, vars, n, model, nUnique);
 		    INTEGER(modeldim)[nUnique] = pmodel;
 
@@ -275,7 +275,7 @@ SEXP glm_mcmcbas(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 		gsl_vector_free(index);
 
 	    logmargy = REAL(getListElement(getListElement(glm_fit, "lpy"),"lpY"))[0];
-	    shrinkage_m = REAL(getListElement(getListElement(glm_fit, "lpy"), "shrinkage"))[0];
+	    // shrinkage_m = REAL(getListElement(getListElement(glm_fit, "lpy"), "shrinkage"))[0];
 
 	    SetModel_glm(glm_fit, Rmodel_m, beta, se, modelspace, deviance, R2, Q,Rintercept, 
                    prior_m, sampleprobs, logmarg, shrinkage, priorprobs,m);

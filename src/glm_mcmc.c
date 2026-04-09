@@ -16,7 +16,7 @@ SEXP glm_mcmc(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 	      SEXP family, SEXP Rcontrol, SEXP Rlaplace, SEXP Rparents
 			  )
 {
-  double *probs, MH=0.0, prior_m=1.0, shrinkage_m, logmargy, postold, postnew;
+  double *probs, MH=0.0, prior_m=1.0, logmargy, postold, postnew; // shrinkage_m
   int i, m, n, pmodel_old, *bestmodel;
   int mcurrent, n_sure;
   int *counts;
@@ -197,9 +197,9 @@ SEXP glm_mcmc(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 
 	prior_m  = compute_prior_probs_MCMC (model, p, modelprior, POS, nofvars, LVL, costs_mat, n_obs);
 
-	// Evaluate logmargy and shrinkage
+	// Evaluate logmargy
 	logmargy = REAL(getListElement(getListElement(glm_fit, "lpy"),"lpY"))[0];
-	shrinkage_m = REAL(getListElement(getListElement(glm_fit, "lpy"),"shrinkage"))[0];
+	// shrinkage_m = REAL(getListElement(getListElement(glm_fit, "lpy"),"shrinkage"))[0];
 
 	SetModel_glm(glm_fit, Rmodel_m, beta, se, modelspace, deviance, R2, Q,Rintercept, 
 		prior_m, sampleprobs, logmarg, shrinkage, priorprobs, m);
@@ -255,9 +255,9 @@ SEXP glm_mcmc(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 
 			prior_m  = compute_prior_probs_MCMC (model, p, modelprior, POS, nofvars, LVL, costs_mat, n_obs);
 
-			// Evaluate logmargy and shrinkage
+			// Evaluate logmargy
 			logmargy = REAL(getListElement(getListElement(glm_fit, "lpy"),"lpY"))[0];
-			shrinkage_m = REAL(getListElement(getListElement(glm_fit, "lpy"),"shrinkage"))[0];
+			//shrinkage_m = REAL(getListElement(getListElement(glm_fit, "lpy"),"shrinkage"))[0];
 
 			postnew = logmargy + log(prior_m);
 		} else {

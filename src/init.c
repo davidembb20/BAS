@@ -19,7 +19,7 @@ extern void phi1(void *, void *, void *, void *, void *, void *, void *, void*, 
 extern void tcch(void *, void *, void *, void *, void *, void *, void *, void*);
 
 /* .Call calls */
-extern SEXP glm_fit(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP);
+//extern SEXP glm_fit(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP);
 
 // David: added 3 extra arguments (type SEXP) in the call (positions, levels, costs) and gibbs functions
 extern SEXP glm_deterministic(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP);
@@ -58,7 +58,7 @@ static const R_CMethodDef CEntries[] = {
 
 static const R_CallMethodDef CallEntries[] = {
   {"glm_deterministic", (DL_FUNC) &glm_deterministic, 14},
-  {"glm_fit",           (DL_FUNC) &glm_fit,            7},
+  //{"glm_fit",           (DL_FUNC) &glm_fit,            7},
   {"glm_mcmc",          (DL_FUNC) &glm_mcmc,          20},
   {"glm_mcmc_grow",     (DL_FUNC) &glm_mcmc_grow,     21}, 
   {"glm_mcmcbas",       (DL_FUNC) &glm_mcmcbas,       20},
