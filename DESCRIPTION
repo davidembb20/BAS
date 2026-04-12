@@ -10,7 +10,10 @@ Authors@R: c(person("Merlise", "Clyde", email="clyde@duke.edu",
 	   person("Yingbo", "Li", role="ctb"),
 	   person("Betsy", "Bersson", role="ctb"),
 	   person("Don", "van de Bergh", role="ctb"),
-	   person("Quanli", "Wang", role="ctb"))
+	   person("Quanli", "Wang", role="ctb"),
+       # Me
+       person("David", "Baptista", role = "ctb"))
+       # Extension of glm´s to incorporate variable costs and factors
 Depends:
     R (>= 3.0)
 Imports:

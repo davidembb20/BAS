@@ -1,251 +1,120 @@
-# Copyright (c) 2024 Merlise Clyde and contributors to BAS. All rights reserved.
-# This work is licensed under a GNU GENERAL PUBLIC LICENSE Version 3.0
-# License text is available at https://www.gnu.org/licenses/gpl-3.0.html
-#
-#' Bayesian Adaptive Sampling Without Replacement for Variable Selection in
-#' Generalized Linear Models
+#' Bayesian Adaptive Sampling for GLMs with Variable Costs
 #'
-#' Sample with or without replacement from a posterior distribution on GLMs
+#' Extension of \code{\link{bas.glm}} to incorporate variable-specific costs
+#' in Bayesian variable selection for generalized linear models.
 #'
-#' BAS provides several search algorithms to find high probability models for
-#' use in Bayesian Model Averaging or Bayesian model selection. For p less than
-#' 20-25, BAS can enumerate all models depending on memory availability, for
-#' larger p, BAS samples without replacement using random or deterministic
-#' sampling. The Bayesian Adaptive Sampling algorithm of Clyde, Ghosh, Littman
-#' (2010) samples models without replacement using the initial sampling
-#' probabilities, and will optionally update the sampling probabilities every
-#' "update" models using the estimated marginal inclusion probabilities. BAS
-#' uses different methods to obtain the \code{initprobs}, which may impact the
-#' results in high-dimensional problems. The deterministic sampler provides a
-#' list of the top models in order of an approximation of independence using
-#' the provided \code{initprobs}.  This may be effective after running the
-#' other algorithms to identify high probability models and works well if the
-#' correlations of variables are small to modest.  The priors on coefficients
-#' are mixtures of g-priors that provide approximations to the power prior.
+#' This function implements Bayesian Adaptive Sampling (BAS) and related
+#' algorithms for model selection and averaging in GLMs, while allowing
+#' the inclusion of variable costs through the \code{var.costs} argument.
+#' These costs can be used to define cost-adjusted model priors and
+#' influence posterior inference.
 #'
-#' @param formula generalized linear model formula for the full model with all
-#' predictors, Y ~ X.  All code assumes that an intercept will be included in
-#' each model.
-#' @param family a description of the error distribution and link function for
-#' exponential family; currently only `binomial()` with the logistic link and
-#' `poisson()` and `Gamma()`with the log link are available.
-#' @param data data frame
-#' @param weights optional vector of weights to be used in the fitting process.
-#' May be missing in which case weights are 1.
-#' @param subset subset of data used in fitting
-#' @param contrasts an optional list. See the contrasts.arg of `model.matrix.default()`.
-#' @param offset a priori known component to be included in the linear
-#' predictor; by default 0.
-#' @param na.action a function which indicates what should happen when the data
-#' contain NAs. The default is "na.omit".
-#' @param n.models number of unique models to keep. If NULL, BAS will attempt
-#' to enumerate unless p > 35 or method="MCMC". For any of methods using MCMC
-#' algorithms that sample with replacement, sampling will stop when the number
-#' of iterations exceeds 'MCMC.iterations'. On exit
-#' 'n.models' is updated to reflect the unique number of models that have been
-#' sampled.
-#' @param betaprior Prior on coefficients for model coefficients (except
-#' intercept).  Options include 
-#' \code{\link{g.prior}}, 
-#' \code{\link{CCH}},
-#' \code{\link{robust}}, 
-#' \code{\link{intrinsic}}, 
-#' \code{\link{beta.prime}},
-#' \code{\link{EB.local}}, 
-#' \code{\link{AIC}}, and 
-#' \code{\link{BIC}}.
-#' @param modelprior Family of prior distribution on the models.  Choices
+#' The function supports binomial (logit link), Poisson (log link), and
+#' Gamma (log link) families. Sampling methods include BAS, MCMC, Gibbs,
+#' and hybrid approaches.
+#'
+#' @inheritParams bas.glm
+#' 
+#' @param modelprior Family of prior distribution on the models. Choices
 #' include \code{\link{uniform}}, \code{\link{Bernoulli}},
 #' \code{\link{beta.binomial}}, truncated Beta-Binomial,
 #' \code{\link{tr.beta.binomial}}, and truncated power family
 #' \code{\link{tr.power.prior}}.
-#' @param initprobs vector of length p with the initial inclusion probabilities
-#' used for sampling without replacement (the intercept will be included with
-#' probability one and does not need to be added here) or a character string
-#' giving the method used to construct the sampling probabilities if "Uniform"
-#' each predictor variable is equally likely to be sampled (equivalent to
-#' random sampling without replacement). If "eplogp", use the
-#' \code{\link{eplogprob}} function to approximate the Bayes factor using
-#' p-values to find initial marginal inclusion probabilities and sample
-#' without replacement using these inclusion probabilities, which may be
-#' updated using estimates of the marginal inclusion probabilities. "eplogp"
-#' assumes that MLEs from the full model exist; for problems where that is not
-#' the case or 'p' is large, initial sampling probabilities may be obtained
-#' using \code{\link{eplogprob.marg}} which fits a model to each predictor
-#' separately.  To run a Markov Chain to provide initial
-#' estimates of marginal inclusion probabilities, use method="MCMC+BAS" below.
-#' While the initprobs are not used in sampling for method="MCMC", this
-#' determines the order of the variables in the lookup table and affects memory
-#' allocation in large problems where enumeration is not feasible.  For
-#' variables that should always be included set the corresponding initprobs to
-#' 1, to override the `modelprior` or use `include.always` to force these variables
-#' to always be included in the model.
-#' @param include.always A formula with terms that should always be included
-#' in the model with probability one.  By default this is `~ 1` meaning that the
-#' intercept is always included.  
-#' This will also override any of the values in `initprobs`
-#' above by setting them to 1.
-#' @param method A character variable indicating which sampling method to use:
-#' method="BAS" uses Bayesian Adaptive Sampling (without replacement) using the
-#' sampling probabilities given in initprobs and updates using the marginal
-#' inclusion probabilities to direct the search/sample; method="MCMC" combines
-#' a random walk Metropolis Hastings (as in MC3 of Raftery et al 1997) with a
-#' random swap of a variable included with a variable that is currently
-#' excluded (see Clyde, Ghosh, and Littman (2010) for details);
-#' method="MCMC+BAS" runs an initial MCMC as above to calculate marginal
-#' inclusion probabilities and then samples without replacement as in BAS;
-#' method = "deterministic" runs a deterministic sampler using the initial
-#' probabilities (no updating); this is recommended for fast enumeration or if a
-#' model of independence is a good approximation to the joint posterior
-#' distribution of the model indicators.  For BAS, the sampling probabilities
-#' can be updated as more models are sampled. (see 'update' below).  We
-#' recommend "MCMC+BAS" or "MCMC" for high dimensional problems.
-#' @param update number of iterations between potential updates of the sampling
-#' probabilities in the "BAS" method. If NULL do not update, otherwise the
-#' algorithm will update using the marginal inclusion probabilities as they
-#' change while sampling takes place.  For large model spaces, updating is
-#' recommended. If the model space will be enumerated, leave at the default.
-#' @param bestmodel optional binary vector representing a model to initialize
-#' the sampling. If NULL sampling starts with the null model
-#' @param prob.rw For any of the MCMC methods, probability of using the
-#' random-walk proposal; otherwise use a random "flip" move to propose a new
-#' model.
-#' @param burnin.iterations Number of iterations to discard as part of burnin
-#' when using any of the MCMC
-#' options; should be greater than 'n.models'. By default 10*p.
-#' @param MCMC.iterations Number of MCMC iterations for sampling using any of the MCMC
-#' options; should be greater than 'n.models'. By default 1000*p.
-#' @param thin For "MCMC", thin the MCMC chain every "thin" iterations; default 
-#' is no thinning.  For large p, thinning can be used to significantly reduce memory
-#' requirements as models and associated summaries are saved only every thin 
-#' iterations.  For thin = p, the  model and associated output are recorded 
-#' every p iterations,similar to the Gibbs sampler in SSVS.
-#' @param control a list of parameters that control convergence in the fitting
-#' process.  See the documentation for \code{glm.control()}
-#' @param laplace logical variable for whether to use a Laplace approximate for
-#' integration with respect to g to obtain the marginal likelihood.  If FALSE
-#' the Cephes library is used which may be inaccurate for large n or large
-#' values of the Wald Chisquared statistic.
-#' @param renormalize logical variable for whether posterior probabilities
-#' should be based on renormalizing marginal likelihoods times prior
-#' probabilities or use Monte Carlo frequencies. Applies only to MCMC sampling.
-#' @param force.heredity Logical variable to force all levels of a factor to be
-#' included together and to include higher order interactions only if lower
-#' order terms are included.  Currently only supported with `method='MCMC'`
-#' and `method='BAS'` (experimental).
-#' Default is FALSE.
-#' @param GROW Logical variable to indicate that the output vectors in MCMC are growable.  
-#' Rather than allocate space based on `n.models`, the vectors will grow as needed
-#' if the number of unique models sampled exceeds the initial size of the allocated output vectors controlled by 
-#' `n.models.init`.  This is useful when `n.models` is unknown
-#' before reaching 'MCMC.iterations'.  Default is TRUE.
-#' @param expand variable to control how much to grow vectors with GROW = TRUE 
-#' if number of unique models exceeds the current size of the vectors. 
-#' The default is 1.25 times, which allows vectors to grow by 25 percent.
-#' @param n.models.init Initial size of output vectors if GROW = TRUE. The 
-#' default is `n.models = 2500`.
-#' @param bigmem Logical variable to indicate that there is access to
-#' large amounts of memory (physical or virtual) for enumeration
-#' with large model spaces, e.g. > 2^25.
 #'
-#' @return \code{bas.glm} returns an object of class \code{basglm}
+#' Additional priors supported in \code{bas.glmFC} include:
+#' \itemize{
+#'   \item \code{CC}: Constant–Constant prior 
+#'   \item \code{SBC}: Scott-Berger Constant prior
+#'   \item \code{SBSB}: Scott-Berger Scott-Berger prior
+#' }
 #'
-#' An object of class \code{basglm} is a list containing at least the following
-#' components:
+#' These priors can incorporate variable costs and are particularly useful
+#' when \code{var.costs} is specified.
+#' @param var.costs Optional matrix specifying costs and grouping structure
+#' for predictor variables. If \code{NULL}, all variables are assumed to have
+#' equal cost (default = 1).
 #'
-#' \item{postprobs}{the posterior probabilities of the models selected}
-#' \item{priorprobs}{the prior probabilities of the models selected}
-#' \item{logmarg}{values of the log of the marginal likelihood for the models}
-#' \item{n.vars}{total number of independent variables in the full model,
-#' including the intercept} 
-#' \item{size}{the number of independent variables in
-#' each of the models, includes the intercept} 
-#' \item{which}{a list of lists
-#' with one list per model with variables that are included in the model}
-#' \item{probne0}{the posterior probability that each variable is non-zero}
-#' \item{mle}{list of lists with one list per model giving the GLM
-#' estimate of each (nonzero) coefficient for each model.} 
-#' \item{mle.se}{list of
-#' lists with one list per model giving the GLM standard error of each
-#' coefficient for each model} 
-#' \item{deviance}{the GLM deviance for each model}
-#' \item{modelprior}{the prior distribution on models that created the BMA 
-#' object} 
-#' \item{Q}{the Q statistic for each model used in the marginal
-#' likelihood approximation} 
-#' \item{Y}{response} 
-#' \item{X}{matrix of predictors}
-#' \item{family}{family object from the original call} 
-#' \item{betaprior}{family object for prior on coefficients, including
-#'  hyperparameters}
-#' \item{modelprior}{family object for prior on the models}
-#' \item{include.always}{indices of variables that are forced into the model}
-#' @author Merlise Clyde (\email{clyde@@duke.edu}), Quanli Wang and Yingbo
-#' Li
-#' @references Li, Y. and Clyde, M. (2018) Mixtures of g-priors in Generalized
-#' Linear Models. 
-#' Journal of the American Statistical Association. 113:1828-1845 \cr
-#' \doi{10.1080/01621459.2018.1469992} \cr
-#' Clyde, M. Ghosh, J. and Littman, M. (2010) Bayesian Adaptive Sampling for
-#' Variable Selection and Model Averaging. Journal of Computational Graphics
-#' and Statistics.  20:80-101 \cr
-#' \doi{10.1198/jcgs.2010.09049} \cr
-#' Raftery, A.E, Madigan, D. and Hoeting, J.A. (1997) Bayesian Model Averaging
-#' for Linear Regression Models. Journal of the American Statistical
-#' Association.
-#' @keywords GLM regression
+#' The matrix must:
+#' \itemize{
+#'   \item Have one row per predictor variable (matching the order in the model)
+#'   \item Include a first column named \code{"Groups"} indicating group membership
+#'   \item Include additional columns corresponding to each predictor variable
+#' }
+#'
+#' This structure allows defining grouped costs and enables cost-dependent
+#' model priors such as FND-based priors.
+#'
+#' @details
+#' Compared to \code{bas.glm}, this function:
+#' \itemize{
+#'   \item Incorporates variable-specific costs via \code{var.costs}
+#'   \item Supports grouped variables for hierarchical cost structures
+#'   \item Adjusts model priors and posterior summaries accordingly
+#'   \item Computes posterior inclusion probabilities (PIPs) at:
+#'     \itemize{
+#'       \item Variable level
+#'       \item Group level
+#'     }
+#'   \item Stores additional outputs such as:
+#'     \itemize{
+#'       \item \code{costs}: processed cost matrix
+#'       \item \code{groups}: group membership matrix
+#'       \item \code{pip_groups}: posterior inclusion probabilities by group
+#'       \item \code{modelcost}: total cost of each model
+#'     }
+#' }
+#'
+#' For MCMC-based methods, the function also performs an optional
+#' importance resampling step to correct for cost-adjusted priors.
+#'
+#' @return An object of class \code{basglm} and \code{bas}, with all components
+#' returned by \code{bas.glm}, plus:
+#'
+#' \item{costs}{Matrix of variable costs used in the analysis}
+#' \item{groups}{Matrix indicating group membership of variables}
+#' \item{pip}{Posterior inclusion probabilities at the variable level}
+#' \item{pip_groups}{Posterior inclusion probabilities at the group level}
+#' \item{modelcost}{Total cost associated with each model}
+#' \item{models_matrix}{Binary matrix indicating variables included in each model}
+#' \item{models_active_vars}{Matrix of active variables per model}
+#' \item{models_active_groups}{Matrix of active groups per model}
+#'
+#' Additional components are returned when using MCMC-based methods:
+#' \itemize{
+#'   \item \code{postprobs.MCMC}, \code{probne0.MCMC}
+#'   \item \code{postprobs.RN}, \code{probne0.RN}
+#'   \item \code{var_pip.MCMC}, \code{group_pip.MCMC}
+#' }
+#'
+#' @seealso \code{\link{bas.glm}}
+#'
 #' @examples
-#'
+#' \dontrun{
 #' library(MASS)
 #' data(Pima.tr)
 #'
+#' # Example with equal costs (default)
+#' fit1 <- bas.glmFC(type ~ ., data = Pima.tr,
+#'                  family = binomial(),
+#'                  modelprior = beta.binomial(1,1))
 #'
-#' # enumeration  with default method="BAS"
-#' pima.cch = bas.glm(type ~ ., data=Pima.tr, n.models= 2^7,
-#'               method="BAS",
-#'               betaprior=CCH(a=1, b=532/2, s=0), family=binomial(),
-#'               modelprior=beta.binomial(1,1))
+#' # Example with custom variable costs
+#' vars <- colnames(Pima.tr)[-which(colnames(Pima.tr) == "type")]
+#' cost_matrix <- cbind(Groups = rep(1, length(vars)),
+#'                      diag(length(vars)))
+#' rownames(cost_matrix) <- vars
 #'
-#' summary(pima.cch)
-#' image(pima.cch)
-#'
-#' # Note MCMC.iterations are set to 2500 for illustration purposes due to time
-#' # limitations for running examples on CRAN servers.
-#' # Please check convergence diagnostics and run longer in practice
-#'
-#' pima.robust = bas.glm(type ~ ., data=Pima.tr, n.models= 2^7,
-#'               method="MCMC", MCMC.iterations=2500,
-#'               betaprior=robust(), family=binomial(),
-#'               modelprior=beta.binomial(1,1))
-#'
-#' pima.BIC = bas.glm(type ~ ., data=Pima.tr, n.models= 2^7,
-#'               method="MCMC+BAS", MCMC.iterations=2500,
-#'               betaprior=bic.prior(), family=binomial(),
-#'               modelprior=uniform())
-
-#' # Poisson example
-#' if(requireNamespace("glmbb", quietly=TRUE)) {
-#'   data(crabs, package='glmbb')
-#'   #short run for illustration
-#'   crabs.bas = bas.glm(satell ~ color*spine*width + weight, data=crabs,
-#'                       family=poisson(),
-#'                       betaprior=EB.local(), modelprior=uniform(),
-#'                       method="MCMC", n.models=2^10, MCMC.iterations=2500,
-#'                       prob.rw=.95)
-#'   
-#'  # Gamma example
-#'  if(requireNamespace("faraway", quietly=TRUE)) {
-#'     data(wafer, package='faraway')
-#'                       
-#'     wafer_bas = bas.glm(resist~ ., data=wafer,  include.always = ~ .,
-#'                         betaprior = bic.prior() ,
-#'                         family = Gamma(link = "log"))
-#'   }
+#' fit2 <- bas.glmFC(type ~ ., data = Pima.tr,
+#'                  family = binomial(),
+#'                  var.costs = cost_matrix,
+#'                  modelprior = beta.binomial(1,1))
 #' }
+#'
+#' @keywords GLM regression
 #' @concept BMA
 #' @concept variable selection
 #' @family BMA functions
-#' @rdname bas.glm
+#' @rdname bas.glmFC
 #' @export
 bas.glmFC <- function(formula, family = binomial(link = "logit"),
                     data, weights, subset, contrasts=NULL, offset, na.action = "na.omit",
