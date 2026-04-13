@@ -88,6 +88,8 @@
 #'
 #' @seealso \code{\link{bas.glm}}
 #'
+#' @author David Baptista (\email{davidbonitobaptista@gmail.com})
+#' 
 #' @examples
 #' \dontrun{
 #' library(MASS)
@@ -199,7 +201,7 @@ bas.glmFC <- function(formula, family = binomial(link = "logit"),
   Y <- model.response(mf, type = "any")
 
   mt <- attr(mf, "terms")
-  X <- model.matrix(mt, mf, contrasts)
+  #X <- model.matrix(mt, mf, contrasts)
   #    Y = glm.obj$y
   #    X = glm.obj$x
   # Building the overparameterized model matrix
@@ -220,15 +222,15 @@ bas.glmFC <- function(formula, family = binomial(link = "logit"),
       }),
       factor_vars
     )
+
   }
   else { # No factor in the set of competing variables...
     contrast.list <- NULL
   }
   X <- model.matrix(mt, mf, contrasts.arg = contrast.list) # Create the design matrix X with all levels of factors
-  
+
   namesx <- dimnames(X)[[2]]
   namesx[1] <- "Intercept"
-
   p <- dim(X)[2] # Now (overparameterized design matrix): p = k + sum_j Lj + 1, as it includes the intercept
   
   # positions is a matrix with number of rows equal to the number of regressors
@@ -236,22 +238,36 @@ bas.glmFC <- function(formula, family = binomial(link = "logit"),
 	# Each row describes the position (0-1) in X of a regressor (several positions in case
 	# this regressor is a factor)
 
-  positions <- matrix (0L,
-    ncol = p - 1, # Number of columns in X (after removing the intercept)
-    nrow = length(depvars) # Number of competing variables (length(depvars))
-  ) 
+  #positions <- matrix (0L,
+  #  ncol = p - 1, # Number of columns in X (after removing the intercept)
+  #  nrow = length(depvars) # Number of competing variables (length(depvars))
+  #) 
 
-  cols <- colnames(X)[-1] # drop intercept
-
+  #cols <- colnames(X)[-1] # drop intercept
   # For each competing variable (row)
-  for (i in seq_along(depvars)) {
-    pat <- paste0("^", depvars[i], "$")
-    ## pat <- paste0("^", depvars[i], "(\\d+|$)")  # digit(s) OR end-of-string
-    positions[i, ] <- as.integer(grepl( # searchs for patterns in character strings and returns a logical vector (indicating whether the pattern was found)
-      pat, # text or regular expression to search for
-      cols, # character vector in which to search
-      perl = TRUE))
-  }
+  #for (i in seq_along(depvars)) {
+    #pat <- paste0("^", depvars[i], "$")
+  #  pat <- paste0("^", depvars[i], "(\\d+|$)")  # digit(s) OR end-of-string
+  #  pat <- paste0("^", depvars[i], "\\d$")
+  #  positions[i, ] <- as.integer(grepl( # searchs for patterns in character strings and returns a logical vector (indicating whether the pattern was found)
+  #    pat, # text or regular expression to search for
+  #    cols, # character vector in which to search
+  #    perl = TRUE))
+  #}  
+  
+  # positions<- matrix(0, ncol=p, nrow=length(depvars))
+  # for (i in 1:length(depvars)){positions[i,]<- grepl(depvars[i], colnames(X), fixed=T)}
+  positions <- t(sapply(depvars, function(var) {
+    if(is.factor(data[[var]])) {
+      levs <- levels(data[[var]])
+      ind <- which(namesx[-1] %in% paste0(var,levs)) #1 when the namelevel matches
+    } 
+    else 
+      ind <- which(namesx[-1] == var) # 1 when the name matches
+    
+    posi <- rep(0,p-1); posi[ind] <- 1
+    posi
+  }))
 
   # Vector of length equal to the number of competing variables, with the number of levels of each variable (1 for numeric, >1 for factors)
   var_levels <- colSums (positions %*% t(positions))
@@ -677,15 +693,18 @@ bas.glmFC <- function(formula, family = binomial(link = "logit"),
   result$namesx <- namesx
   result$n <- nrow(X)
   result$modelprior <- modelprior
-  result$probne0[keep]  <- 1.0
-  result$probne0.RN <- result$probne0
-  result$postprobs.RN <- result$postprobs
+  result$probne0[keep]  <- 1.0  
   result$family <- family
   result$betaprior <- betaprior
   result$modelprior <- modelprior
 
   result$n.models <- length(result$postprobs)
   result$include.always <- keep
+
+  if (method == "deterministic") { # Add for BAS/BAS_OLD as well?
+    result$postprobs.MCMC <- result$postprobs
+    result$probne0.MCMC <- result$probne0
+  }
 
   #-------
   # David
@@ -716,7 +735,6 @@ bas.glmFC <- function(formula, family = binomial(link = "logit"),
   if (betaprior$family == "Jeffreys" & (min(result$size) == 1)) result <- .drop.null.bas(result)
   
   # github issue #74. drop models with zero prior probability
-  
   if (any(result$priorprobs == 0)) {
     drop.models = result$priorprobs != 0
     
@@ -757,6 +775,7 @@ bas.glmFC <- function(formula, family = binomial(link = "logit"),
   )
   colnames(models_matrix) <- namesx # Includes the intercept...
 
+  # We didn´t use accurate model space prior functions in MCMC, nor the real candidate set of models.
   if (method == "MCMC" | method == "MCMC_OLD" | method == "Gibbs" | method == "GibbsBVS" | method == "Gibbs_grow" | method == "GibbsBVS_grow" ) {
     
     # Resampling the models found in MCMC to correct for the real set of competing models...
@@ -780,7 +799,8 @@ bas.glmFC <- function(formula, family = binomial(link = "logit"),
                                      positions, var.costs, modelprior$hyper.parameters, nobs)
     }
 
-    # Seria engraçado perceber quantos modelos é que já são saturados antes do resampling; para ver se o resampling é bom ou não    
+    # Seria engraçado perceber quantos modelos fora do real candidate set temos antes do resampling;
+    # para ver se o resampling é bom ou não    
     result$num_bad_models <- sum (new_priorprobs == 0)
     
     # Create bvs_df first
@@ -855,14 +875,13 @@ bas.glmFC <- function(formula, family = binomial(link = "logit"),
     result$old_priorprobs <- bvs_df_resamp$priorprobs # Old prior probs used in the MCMC algorithm
      
     models_matrix <- models_matrix [unique_model_num, , drop = FALSE]
-    
-
+  
     # The denominator in the expression below is the number of MCMC iterations 
     result$postprobs.MCMC <- result$resampling_freq / sum(result$resampling_freq) # freq is the number of times each model was visited by MCMC
     # PIPs for the variables in each model (at the level of the levels)
+    # Keep in mind that resampled_df is the expanded dataframe (colMeans without weight is fine...)
     result$probne0.MCMC <- colMeans (resampled_df [, c(1:p), drop = FALSE]) # Must include the intercept
-    
-
+  
     result$old_ratio <- result$n.Unique / (2 ^ (p - 1)) # The denominator includes repeated models
     # We´re treating numerical variables as if they were categorical variables with two levels...
     levels <- pmax (rowSums (positions), 2)
@@ -870,7 +889,9 @@ bas.glmFC <- function(formula, family = binomial(link = "logit"),
     
     result$postprobs.RN <- compute_posterior (result$logmarg, result$priorprobs)
     
-    result$probne0.RN <- as.vector (result$postprobs.RN %*% models_matrix [, -1])     
+    aux_probne0.RN <- as.vector (result$postprobs.RN %*% models_matrix [, -1]) 
+    names (aux_probne0.RN) <- depvars
+    result$probne0.RN <- aux_probne0.RN
     
     # freq: number of times each model was visited by MCMC
     # sum(result$freq) is just the number of MCMC iterations
@@ -920,9 +941,7 @@ bas.glmFC <- function(formula, family = binomial(link = "logit"),
     
   colnames(models_active_vars) <- depvars
   # matrix product symbol, %*%, is sometimes confused with the pipe operator, %>%
-  pip <- as.vector (result$postprobs %*% models_active_vars)
-  names (pip) <- depvars # Posterior Inclusion Probabilities at the level of the variables 
-    
+  
 	if (dim(groups)[1] > 1) # if there is more than one group
     models_active_groups <- t ( # I need to transpose the matrix to have the groups back as columns and rows as models
       apply ( # Produces a matrix where each column corresponds to the result of applying the function to one row of models_matrix (results are stacked column-wise).
@@ -939,27 +958,34 @@ bas.glmFC <- function(formula, family = binomial(link = "logit"),
        )
 
   colnames(models_active_groups) <- as.character(diff_groups)
-  pip_groups <- as.vector (result$postprobs %*% models_active_groups)
-  # Posterior Inclusion Probabilities at the level of the variables
-  names (pip_groups) <- as.character (diff_groups)
-  result$pip_groups  <- pip_groups
+
+  if (method == "deterministic") {
+    # PIPs at the level of the variables
+    pip <- as.vector (result$postprobs %*% models_active_vars)
+    names (pip) <- depvars
+    result$pip <- pip
+
+    # PIPs at the level of the groups
+    pip_groups <- as.vector (result$postprobs %*% models_active_groups)
+    names (pip_groups) <- as.character (diff_groups)
+    result$pip_groups  <- pip_groups
+  }
 
   if (method == "MCMC" | method == "MCMC_OLD" | method == "Gibbs" | method == "GibbsBVS" | method == "Gibbs_grow" | method == "GibbsBVS_grow") {
 
-    var_pip.RN <- as.vector (result$postprobs.RN %*% models_active_vars)
-    names (var_pip.RN) <- depvars
-    result$var_pip.RN <- var_pip.RN
+    pip.RN <- as.vector (result$postprobs.RN %*% models_active_vars)
+    names (pip.RN) <- depvars
+    result$pip.RN <- pip.RN
     
     group_pip.RN <- as.vector (result$postprobs.RN %*% models_active_groups)
     names (group_pip.RN) <- as.character (diff_groups)
     result$group_pip.RN <- group_pip.RN
 
-    # Weights
-    w <- result$resampling_freq
-
-    var_pip.MCMC <- colSums (models_active_vars * w) / sum (w)
-    names (var_pip.MCMC) <- depvars
-    result$var_pip.MCMC <- var_pip.MCMC
+  
+    w <- result$resampling_freq # Weights
+    pip.MCMC <- colSums (models_active_vars * w) / sum (w)
+    names (pip.MCMC) <- depvars
+    result$pip.MCMC <- pip.MCMC
     
     group_pip.MCMC <- colSums (models_active_groups * w) / sum (w)
     names (group_pip.MCMC) <- as.character (diff_groups)
@@ -989,7 +1015,6 @@ bas.glmFC <- function(formula, family = binomial(link = "logit"),
   result$models_active_vars <- models_active_vars
   result$models_active_groups <- models_active_groups
   result$models_w_logmarg <- models_w_logmarg[, -1] # Remove the first column (the intercept)
-  result$pip <- pip
 
   tot.cost <- model_cost (models_active_vars, var.costs)
   result$modelcost <- tot.cost
