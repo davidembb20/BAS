@@ -125,20 +125,6 @@ SEXP glm_gibbsBVS_grow(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 	int thin = INTEGER(Rthin)[0];
 	int mcmc_size = (INTEGER(MCMC_Iterations)[0] / thin) + 1; // Rounding up
 	
-	
-	// Stuff for the auxiliary tree
-	SEXP aux_shrinkage   = PROTECT(allocVector(REALSXP, ((burnin + mcmc_size) * p))); ++nProtected;
-	SEXP aux_priorprobs  = PROTECT(allocVector(REALSXP, ((burnin + mcmc_size) * p))); ++nProtected; 
-	SEXP aux_logmarg     = PROTECT(allocVector(REALSXP, ((burnin + mcmc_size) * p))); ++nProtected;
-	SEXP aux_modeldim 	 = PROTECT(allocVector(INTSXP,  ((burnin + mcmc_size) * p))); ++nProtected; 
-	SEXP aux_modelspace  = PROTECT(allocVector(VECSXP,  ((burnin + mcmc_size) * p))); ++nProtected;
-	SEXP aux_beta 		 = PROTECT(allocVector(VECSXP,  ((burnin + mcmc_size) * p))); ++nProtected;
-	SEXP aux_se 		 = PROTECT(allocVector(VECSXP,  ((burnin + mcmc_size) * p))); ++nProtected;
-	SEXP aux_R2 		 = PROTECT(allocVector(REALSXP, ((burnin + mcmc_size) * p))); ++nProtected;
-	SEXP aux_deviance    = PROTECT(allocVector(REALSXP, ((burnin + mcmc_size) * p))); ++nProtected;
-	SEXP aux_Q           = PROTECT(allocVector(REALSXP, ((burnin + mcmc_size) * p))); ++nProtected;
-	SEXP aux_Rintercept  = PROTECT(allocVector(REALSXP, ((burnin + mcmc_size) * p))); ++nProtected;
-	
 	double *probs, prior_m=1.0, logmarg_m, postold, postnew; // shrinkage_m
 	int i, m, n, *bestmodel;
 	int mcurrent, n_sure;
@@ -151,9 +137,28 @@ SEXP glm_gibbsBVS_grow(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 
 
 	struct Var *vars = (struct Var *) R_alloc(p, sizeof(struct Var)); // Info about the model variables.
+	probs =  REAL(Rprobs); /* PIPs pointer */
+	n = sortvars(vars, probs, p); /* n = p - 1, if initprobs = "Uniform", right */
+
+	Rprintf("n: %d\n", n);
+	Rprintf("p: %d\n", p);
 	
-	probs =  REAL(Rprobs);
-	n = sortvars(vars, probs, p);
+	/* Max. capacity needed: in every iteration, I need to perform n marginal likelihood evaluations
+	   When I visit a previously visit model, I´ll use the marginal likelihood value stored in aux_tree. */
+	int aux_capacity = (burnin + mcmc_size) * (n); 
+	// Stuff for the auxiliary tree
+	SEXP aux_shrinkage   = PROTECT(allocVector(REALSXP, aux_capacity)); ++nProtected;
+	SEXP aux_priorprobs  = PROTECT(allocVector(REALSXP, aux_capacity)); ++nProtected; 
+	SEXP aux_logmarg     = PROTECT(allocVector(REALSXP, aux_capacity)); ++nProtected;
+	SEXP aux_modeldim 	 = PROTECT(allocVector(INTSXP,  aux_capacity)); ++nProtected; 
+	SEXP aux_modelspace  = PROTECT(allocVector(VECSXP,  aux_capacity)); ++nProtected;
+	SEXP aux_beta 		 = PROTECT(allocVector(VECSXP,  aux_capacity)); ++nProtected;
+	SEXP aux_se 		 = PROTECT(allocVector(VECSXP,  aux_capacity)); ++nProtected;
+	SEXP aux_R2 		 = PROTECT(allocVector(REALSXP, aux_capacity)); ++nProtected;
+	SEXP aux_deviance    = PROTECT(allocVector(REALSXP, aux_capacity)); ++nProtected;
+	SEXP aux_Q           = PROTECT(allocVector(REALSXP, aux_capacity)); ++nProtected;
+	SEXP aux_Rintercept  = PROTECT(allocVector(REALSXP, aux_capacity)); ++nProtected;
+
 	for (i =n; i <p; i++) REAL(MCMCprobs)[vars[i].index] = probs[vars[i].index];
 	for (i =0; i <n; i++) REAL(MCMCprobs)[vars[i].index] = 0.0;
 	// int noInclusionIs1 = no_prior_inclusion_is_1(p, probs);
@@ -188,16 +193,29 @@ SEXP glm_gibbsBVS_grow(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 	int pmodel = INTEGER(modeldim)[m];
 	SEXP Rmodel_m =	PROTECT(allocVector(INTSXP,pmodel));
 	GetModel_m(Rmodel_m, model, p);
+	int nUnique = 0, nUniqueVisited = 0; /* I might store less unique models than those I visited (burn-in and thinning)*/
 	
 	// Initial model fit
 	SEXP glm_fit = PROTECT(glm_FitModel(X, Y, Rmodel_m, Roffset, Rweights, glmfamily,
 		Rcontrol, Rlaplace, betapriorfamily, positions, levels));
 
-	prior_m  = compute_prior_probs_MCMC (model, p, modelprior, POS, nofvars, LVL, costs_mat, n_obs);
-
 	// Evaluate logmarg_m and shrinkage_m
-	logmarg_m= REAL(getListElement(getListElement(glm_fit, "lpy"),"lpY"))[0];
+	//logmarg_m= REAL(getListElement(getListElement(glm_fit, "lpy"),"lpY"))[0];
+	SEXP lpy = getListElement(glm_fit, "lpy");
+	SEXP lpY = getListElement(lpy, "lpY");
+	if (lpy == R_NilValue || lpY == R_NilValue || TYPEOF(lpY) != REALSXP || LENGTH(lpY) < 1) {
+		Rprintf("DEBUG glm_gibbsBVS init: invalid lpy/lpY (pmodel=%d, nUniqueVisited=%d)\n", pmodel, nUniqueVisited);
+		Rprintf("DEBUG glm_gibbsBVS init: TYPEOF(lpy)=%d TYPEOF(lpY)=%d LENGTH(lpY)=%d\n",
+		        TYPEOF(lpy), TYPEOF(lpY), LENGTH(lpY));
+		error("glm_gibbsBVS: invalid glm_fit$lpy$lpY in initial model");
+	}
+	logmarg_m = REAL(lpY)[0];
 	//shrinkage_m = REAL(getListElement(getListElement(glm_fit, "lpy"),"shrinkage"))[0];
+
+	prior_m  = compute_prior_probs_MCMC (model, p, modelprior, POS, nofvars, LVL, costs_mat, n_obs);
+	if (!R_finite(prior_m) || prior_m <= 0.0) {
+		error("glm_gibbsBVS: invalid initial prior probability");
+	}
 
 	/* Set in Output Tree */ 
 	SetModel_glm(glm_fit, Rmodel_m, beta, se, modelspace, deviance, R2, Q, Rintercept, 
@@ -210,12 +228,12 @@ SEXP glm_gibbsBVS_grow(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 
     INTEGER(Rcounts)[0] = 1;
 	postold =  REAL(logmarg)[m] + log(REAL(priorprobs)[m]);
-	int nUnique = 1, nUniqueVisited = 1; /* I might store less unique models than those I visited (burn-in and thinning)*/
+	nUnique++; nUniqueVisited++; 
 
 	// Burn-in Sampling loop
 	int *modelold = ivecalloc(p);
 	memcpy(modelold, model, sizeof(int)*p);
-	int *perm = malloc (n * sizeof(int));
+	int *perm = ivecalloc(n);
 	double *real_model = vecalloc(n);
 	
 	int newmodel = 0, old_loc = 0, new_loc, thin_count = 0;
@@ -224,11 +242,10 @@ SEXP glm_gibbsBVS_grow(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 	int component = 1, oldcomponent = 1, newcomponent = 1;
 	double ratio = 0.0;
 	
-	// Burn-In Period (old: current model and new: proposal)
+	// Burn-In Period (old: current model and new: proposal / alternative model that serves as an auxiliary for the next step model)
 	/* As there´s no thinning, it can´t be enourmous, if thin > 1 */
 	for (int iter = 1; iter < (burnin + 1); iter++) {
 			
-		
 		/* It might be more easier for newcomers to use p instead of n? */
 		/* Refreshing the permutation vector at each iteration … */		
 		for (int j = 0; j < n; ++j) {   
@@ -237,21 +254,22 @@ SEXP glm_gibbsBVS_grow(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 			
 		randperm (perm, n); /* random permutation: can´t shuffle the intercept */
 
-		for (int idx = 0; idx < n; idx++) // Loop across all possible variables (except the intercept)...
-		{
+		for (int idx = 0; idx < n; idx++) { // Loop across all possible variables (except the intercept)...
+		
 			// Copying an array of integers from modelold to model
 			memcpy (model, modelold, sizeof(int)*p);
 
-			/* Next Model Candidate (perm[idx] is always different from intercept_pos) */
+			/* Next Variable Flip (perm[idx] is always different from intercept_pos) */
 			component    = perm [idx]; // Randomly chosen variable
 			oldcomponent = model [vars[component].index]; // Before: vars[component].index
-			model [vars[component].index] = 1 - model [vars[component].index]; // Proposal (= next model)
+			model [vars[component].index] = 1 - model [vars[component].index];  /* Auxiliary model (one-bit flip)
+			necessary for the computation of the next model */
 	
 			/*  ── Checking if the model was visited already / belongs to the tree ────   */
 			aux_branch   = aux_tree;        /* start at the root of the tree                      */
 			newmodel = 0;           
 			pmodel = n_sure;
-			for (int i = 0; i < n; i++) { /* Does the model already exists ?              */
+			for (int i = 0; i < n; i++) { /* Was this "auxiliary" model already visited?              */
 				int bit = model[vars[i].index];  /* inclusion flag for current predictor  */
 
 				if (bit == 1) {
@@ -275,18 +293,36 @@ SEXP glm_gibbsBVS_grow(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 
 			if (newmodel == 1) {
 
-				aux_new_loc = nUniqueVisited;
 				PROTECT (Rmodel_m = allocVector(INTSXP, pmodel)); // pmodel is the number of active variables in the model
 				GetModel_m (Rmodel_m, model, p); // Fill Rmodel_m with indices of active variables
 
 				glm_fit = PROTECT(glm_FitModel(X, Y, Rmodel_m, Roffset, Rweights, glmfamily,
 											   Rcontrol, Rlaplace, betapriorfamily, positions, levels));
-				logmarg_m    = REAL(getListElement(getListElement(glm_fit, "lpy"),"lpY"))[0];
-				//shrinkage_m = REAL(getListElement(getListElement(glm_fit, "lpy"), "shrinkage"))[0];
-				
-				prior_m     = compute_prior_probs_MCMC (model, p, modelprior, POS, nofvars, LVL, costs_mat, n_obs);
+
+				lpy = getListElement(glm_fit, "lpy");
+				lpY = getListElement(lpy, "lpY");
+				if (lpy == R_NilValue || lpY == R_NilValue || TYPEOF(lpY) != REALSXP || LENGTH(lpY) < 1) {
+					Rprintf("DEBUG glm_gibbsBVS burnin: invalid lpy/lpY (iter=%d, idx=%d, pmodel=%d, nUniqueVisited=%d)\n",
+							iter, idx, pmodel, nUniqueVisited);
+					Rprintf("DEBUG glm_gibbsBVS burnin: TYPEOF(lpy)=%d TYPEOF(lpY)=%d LENGTH(lpY)=%d\n",
+							TYPEOF(lpy), TYPEOF(lpY), LENGTH(lpY));
+					error("glm_gibbsBVS: invalid glm_fit$lpy$lpY during burn-in");
+				}
+				logmarg_m = REAL(lpY)[0];
+				// logmarg_m = REAL(getListElement(getListElement(glm_fit, "lpy"),"lpY"))[0];
+				// shrinkage_m = REAL(getListElement(getListElement(glm_fit, "lpy"), "shrinkage"))[0];
+				prior_m = compute_prior_probs_MCMC (model, p, modelprior, POS, nofvars, LVL, costs_mat, n_obs);
 
 				postnew = logmarg_m + log (prior_m);
+				/* Insert in aux_tree, even if this model won´t be the next step model... */
+				aux_new_loc = nUniqueVisited;
+				insert_model_tree (aux_tree, vars, n, model, nUniqueVisited);
+				INTEGER(aux_modeldim)[nUniqueVisited] = pmodel;
+				SetModel_glm(glm_fit, Rmodel_m, aux_beta, aux_se, aux_modelspace, aux_deviance, aux_R2, aux_Q, 
+					aux_Rintercept, prior_m, sampleprobs, aux_logmarg, aux_shrinkage, aux_priorprobs, nUniqueVisited);
+				++nUniqueVisited;
+			
+				UNPROTECT(2);
 
 			} 
 			else {
@@ -298,39 +334,23 @@ SEXP glm_gibbsBVS_grow(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
             /* If oldcomponent = 0, we have just exp (postnew) in the numerator */
 			/* If oldcomponent = 1, we have just exp (postold) in the numerator */
 			/* In the numerator we must have "a", i.e., the model with gamma_idx = 1 */
-            ratio = (oldcomponent * (exp (postold) - exp (postnew)) + exp (postnew))
-			      / (exp (postnew) + exp (postold));
+            ratio = (oldcomponent * (exp (postold) - exp (postnew)) + exp (postnew)) / (exp (postnew) + exp (postold));
             newcomponent = bernoulli_draw (ratio); // Drawing from the full conditional
 
-			if (newcomponent == oldcomponent) { // If the proposal means in fact staying in the same place
-				if (newmodel == 1) UNPROTECT(2);
-				// No need to restore modelold, cause that is done at the beginning of the for loop
-			}
-			else { // Not staying in the current model
-				
-				if (newmodel == 1)  {
-				
-					aux_new_loc = nUniqueVisited;
-					insert_model_tree (aux_tree, vars, n, model, nUniqueVisited);
-					INTEGER(aux_modeldim)[nUniqueVisited] = pmodel;
-					SetModel_glm(glm_fit, Rmodel_m, aux_beta, aux_se, aux_modelspace, aux_deviance, aux_R2, aux_Q, 
-						aux_Rintercept, prior_m, sampleprobs, aux_logmarg, aux_shrinkage, aux_priorprobs, nUniqueVisited);
-					++nUniqueVisited;
-				
-					UNPROTECT(2);
-				}
+			if (newcomponent != oldcomponent) { // Not staying in the current model
 
 				aux_old_loc = aux_new_loc;
 				postold = postnew;
 				memcpy (modelold, model, sizeof(int)*p); // Copying an array of integers from model to modelold
 			}
-
+			/* else => staying in the same place at the next step
+			No need to restore modelold, cause that is done at the beginning of the for loop */
 		}
 
 	}
 
 
-	m++;
+	m++; /* m = 1 */
 	while (m < mcmc_size) {
 		
 		/* Refreshing the permutation vector at each iteration … */		
@@ -338,8 +358,11 @@ SEXP glm_gibbsBVS_grow(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 		for (int j = 0; j < n; ++j) {   
 			perm[j] = j;  /* 'j' represents a variable inside vars[] */
 		}
-			
-		randperm (perm, n); /* random permutation: do not shuffle the intercept, as I want all my models with it */
+		
+		/* random permutation of the competing variables: 
+			-> doesn´t shuffle the intercept nor other variables forced to be included, as I want all my models with them; 
+			this is achieve because we´re working with a different vector... */
+		randperm (perm, n); 
 
 		/* Thinning */
 		thin_count = 0;
@@ -350,10 +373,10 @@ SEXP glm_gibbsBVS_grow(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 				// Copying an array of integers from modelold to model
 				memcpy (model, modelold, sizeof(int)*p);
 
-				/* Next Model Candidate (perm[ind] is always different from intercept_pos) */
+				/* Next Variable Flip (perm[ind] is always different from intercept_pos) */
 				component    = perm [idx]; // Randomly chosen index (not variable)
 				oldcomponent = model [vars[component].index]; // Before: vars[component].index
-				model [vars[component].index] = 1 - model [vars[component].index]; // Proposal
+				model [vars[component].index] = 1 - model [vars[component].index]; 
 
 				/*  ── Checking if the model was visited already / belongs to the tree ────   */
 				aux_branch   = aux_tree;        /* start at the root of the tree                      */
@@ -383,19 +406,34 @@ SEXP glm_gibbsBVS_grow(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 
 				if (newmodel == 1) {
 
-					aux_new_loc = nUniqueVisited;
 					PROTECT (Rmodel_m = allocVector(INTSXP, pmodel)); // pmodel is the number of active variables in the model
 					GetModel_m (Rmodel_m, model, p); // Fill Rmodel_m with indices of active variables
 
 					glm_fit      = PROTECT(glm_FitModel(X, Y, Rmodel_m, Roffset, Rweights, glmfamily,
 														Rcontrol, Rlaplace, betapriorfamily, positions, levels));
-					logmarg_m     = REAL(getListElement(getListElement(glm_fit, "lpy"),"lpY"))[0];
+					lpy = getListElement(glm_fit, "lpy");
+					lpY = getListElement(lpy, "lpY");
+					if (lpy == R_NilValue || lpY == R_NilValue || TYPEOF(lpY) != REALSXP || LENGTH(lpY) < 1) {
+						Rprintf("DEBUG glm_gibbsBVS main: invalid lpy/lpY (m=%d, idx=%d, thin_count=%d, pmodel=%d, nUniqueVisited=%d)\n",
+								m, idx, thin_count, pmodel, nUniqueVisited);
+						Rprintf("DEBUG glm_gibbsBVS main: TYPEOF(lpy)=%d TYPEOF(lpY)=%d LENGTH(lpY)=%d\n",
+								TYPEOF(lpy), TYPEOF(lpY), LENGTH(lpY));
+						error("glm_gibbsBVS: invalid glm_fit$lpy$lpY during main loop");
+					}
+					logmarg_m = REAL(lpY)[0];
+					// logmarg_m     = REAL(getListElement(getListElement(glm_fit, "lpy"),"lpY"))[0];
 					//shrinkage_m  = REAL(getListElement(getListElement(glm_fit, "lpy"), "shrinkage"))[0];
-					
 					prior_m      = compute_prior_probs_MCMC (model, p, modelprior, POS, nofvars, LVL, costs_mat, n_obs);
 
 					postnew = logmarg_m + log (prior_m);
 
+					aux_new_loc = nUniqueVisited;
+					insert_model_tree (aux_tree, vars, n, model, nUniqueVisited);
+					INTEGER(aux_modeldim)[nUniqueVisited] = pmodel;
+					SetModel_glm(glm_fit, Rmodel_m, aux_beta, aux_se, aux_modelspace, aux_deviance, aux_R2, aux_Q, 
+						aux_Rintercept, prior_m, sampleprobs, aux_logmarg, aux_shrinkage, aux_priorprobs, nUniqueVisited);
+					++nUniqueVisited;
+					UNPROTECT(2);
 				} 
 				else {
 					aux_new_loc = aux_branch->where;
@@ -406,27 +444,10 @@ SEXP glm_gibbsBVS_grow(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 				/* If oldcomponent = 0, we have just exp (postnew) in the numerator */
 				/* If oldcomponent = 1, we have just exp (postold) in the numerator */
 				/* In the numerator we must have "a", i.e., the model with gamma_idx = 1 */
-				ratio = (oldcomponent * (exp (postold) - exp (postnew)) + exp (postnew))
-					/ (exp (postnew) + exp (postold));
+				ratio = (oldcomponent * (exp (postold) - exp (postnew)) + exp (postnew)) / (exp (postnew) + exp (postold));
 				newcomponent = bernoulli_draw (ratio); // Drawing from the full conditional
 
-				if (newcomponent == oldcomponent) { // If the proposal means in fact staying in the same place
-					if (newmodel == 1) UNPROTECT(2);
-					// No need to restore modelold, cause that is done at the beginning of the for loop
-				}
-				else { // Not staying in the current model
-					
-					if (newmodel == 1)  {
-					
-						aux_new_loc = nUniqueVisited;
-						insert_model_tree (aux_tree, vars, n, model, nUniqueVisited);
-						INTEGER(aux_modeldim)[nUniqueVisited] = pmodel;
-						SetModel_glm(glm_fit, Rmodel_m, aux_beta, aux_se, aux_modelspace, aux_deviance, aux_R2, aux_Q, 
-							aux_Rintercept, prior_m, sampleprobs, aux_logmarg, aux_shrinkage, aux_priorprobs, nUniqueVisited);
-						++nUniqueVisited;
-						UNPROTECT(2);
-					}
-
+				if (newcomponent != oldcomponent) { 
 					aux_old_loc = aux_new_loc;
 					postold = postnew;
 					memcpy (modelold, model, sizeof(int)*p); // Copying an array of integers from model to modelold
@@ -439,7 +460,7 @@ SEXP glm_gibbsBVS_grow(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 
 		branch   = tree;        /* start at the root of the tree                      */
 		newmodel = 0;  
-		pmodel       = n_sure;
+		pmodel   = n_sure;
 		for (int i = 0; i < n; i++) { 
 			int bit = modelold[vars[i].index];  /* inclusion flag for current predictor  */
 
@@ -469,7 +490,6 @@ SEXP glm_gibbsBVS_grow(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 			insert_model_tree (tree, vars, n, modelold, nUnique);
 			INTEGER(modeldim)[nUnique] = pmodel;
 
-			/* pull stats from the *aux_tree* arrays using aux_old_loc */
 			SetModel_gibbs(nUnique,	
 				REAL(aux_logmarg)[aux_old_loc], REAL(aux_shrinkage)[aux_old_loc], REAL(aux_priorprobs)[aux_old_loc],
 				logmarg, shrinkage, priorprobs, sampleprobs,
@@ -554,7 +574,7 @@ SEXP glm_gibbsBVS_grow(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 	// Compute marginal probabilities
 	mcurrent = nUnique;
 	//		Rprintf("NumUnique Models Accepted %d \n", nUnique);
-	compute_modelprobs(modelprobs, logmarg, priorprobs,mcurrent);
+	compute_modelprobs(modelprobs, logmarg, priorprobs, mcurrent);
 	compute_margprobs(modelspace, modeldim, modelprobs, probs, mcurrent, p);
 
 	INTEGER(NumUnique)[0] = nUnique;

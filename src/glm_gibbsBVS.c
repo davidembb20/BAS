@@ -153,7 +153,7 @@ SEXP glm_gibbsBVS(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 
 	struct Var *vars = (struct Var *) R_alloc(p, sizeof(struct Var)); // Info about the model variables.
 	probs =  REAL(Rprobs); /* PIPs pointer */
-	n = sortvars(vars, probs, p); /* n = p, if initprobs = "Uniform"*/
+	n = sortvars(vars, probs, p); /* n = p - 1, if initprobs = "Uniform", right */
 
 	Rprintf("n: %d\n", n);
 	Rprintf("p: %d\n", p);
