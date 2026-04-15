@@ -228,29 +228,60 @@ double compute_sample_probs_bernoulli(SEXP Rprobs, int *model, int p) {
 /* Used only in lm*.c. However, we´re only focusing on adjusting BAS to factors in GLMs. For linear regression, work in the future needs to be done. */
 double compute_prior_probs(int *model, int modeldim, int p, SEXP modelprior, int noInclusionIs1) {
   const char *family;
-  double *hyper_parameters, priorprob = 1.0;
+  SEXP hyper_params_sexp = R_NilValue;
+  double *hyper_parameters = NULL, priorprob = 1.0;
 
 
   family = CHAR(STRING_ELT(getListElement(modelprior, "family"),0));
-  hyper_parameters = REAL(getListElement(modelprior,"hyper.parameters"));
+  hyper_params_sexp = getListElement(modelprior, "hyper.parameters");
 
   // do not reduce p by the number of predictors that are always included
   // Gitub issue # 87
   if (strcmp(family, "Bernoulli") == 0)
+  {
+    if (hyper_params_sexp == R_NilValue || TYPEOF(hyper_params_sexp) != REALSXP) {
+      error("modelprior$hyper.parameters must be numeric for family '%s'", family);
+    }
+    hyper_parameters = REAL(hyper_params_sexp);
     priorprob = Bernoulli(model, p, hyper_parameters);
+  }
   
   // reduce the model space by the number of predictors that are always included 
   p -= noInclusionIs1;
   modeldim -= noInclusionIs1;
 
   if  (strcmp(family, "Beta-Binomial") == 0)
+  {
+    if (hyper_params_sexp == R_NilValue || TYPEOF(hyper_params_sexp) != REALSXP) {
+      error("modelprior$hyper.parameters must be numeric for family '%s'", family);
+    }
+    hyper_parameters = REAL(hyper_params_sexp);
     priorprob = beta_binomial(modeldim, p, hyper_parameters);
+  }
   if  (strcmp(family, "Trunc-Beta-Binomial") == 0)
+  {
+    if (hyper_params_sexp == R_NilValue || TYPEOF(hyper_params_sexp) != REALSXP) {
+      error("modelprior$hyper.parameters must be numeric for family '%s'", family);
+    }
+    hyper_parameters = REAL(hyper_params_sexp);
     priorprob = trunc_beta_binomial(modeldim, p, hyper_parameters);
+  }
   if  (strcmp(family, "Trunc-Poisson") == 0)
+  {
+    if (hyper_params_sexp == R_NilValue || TYPEOF(hyper_params_sexp) != REALSXP) {
+      error("modelprior$hyper.parameters must be numeric for family '%s'", family);
+    }
+    hyper_parameters = REAL(hyper_params_sexp);
     priorprob = trunc_poisson(modeldim, p, hyper_parameters);
+  }
   if  (strcmp(family, "Trunc-Power-Prior") == 0)
+  {
+    if (hyper_params_sexp == R_NilValue || TYPEOF(hyper_params_sexp) != REALSXP) {
+      error("modelprior$hyper.parameters must be numeric for family '%s'", family);
+    }
+    hyper_parameters = REAL(hyper_params_sexp);
     priorprob = trunc_power_prior(modeldim, p, hyper_parameters);
+  }
 // Need to add
 //  if (strcmp(family, "Hereditary") == 0)
 //    priorprob = Hereditary(model, p, hyper_parameters);
@@ -358,13 +389,20 @@ double compute_prior_probs_MCMC (int * model, int p, SEXP modelprior,
  {
   
   const char *family;
-  double *hyper_parameters, priorprob = 1.0;
+  SEXP hyper_params_sexp = R_NilValue;
+  double *hyper_parameters = NULL, priorprob = 1.0;
 
   /*--------------------------------------------------*/
   /*  Pull the prior family name and its hyper-params */
   /*--------------------------------------------------*/
   family = CHAR(STRING_ELT(getListElement(modelprior, "family"),0));
-  hyper_parameters = REAL(getListElement(modelprior,"hyper.parameters"));
+  if (strcmp(family, "FND") == 0 || strcmp(family, "FNDConst") == 0 || strcmp(family, "FNDSB") == 0) {
+    hyper_params_sexp = getListElement(modelprior, "hyper.parameters");
+    if (hyper_params_sexp == R_NilValue || TYPEOF(hyper_params_sexp) != REALSXP) {
+      error("modelprior$hyper.parameters must be numeric for family '%s'", family);
+    }
+    hyper_parameters = REAL(hyper_params_sexp);
+  }
   
 
   /* Mudar as prior probs functions para que não seja 
@@ -1028,13 +1066,20 @@ double compute_prior_probs_enumeration  (gsl_vector *index, int p, SEXP modelpri
 {
   
   const char *family;
-  double *hyper_parameters, priorprob = 1.0;
+  SEXP hyper_params_sexp = R_NilValue;
+  double *hyper_parameters = NULL, priorprob = 1.0;
 
   /*--------------------------------------------------*/
   /*  Pull the prior family name and its hyper-params */
   /*--------------------------------------------------*/
   family = CHAR(STRING_ELT(getListElement(modelprior, "family"),0));
-  hyper_parameters = REAL(getListElement(modelprior,"hyper.parameters"));
+  if (strcmp(family, "FND") == 0 || strcmp(family, "FNDConst") == 0 || strcmp(family, "FNDSB") == 0) {
+    hyper_params_sexp = getListElement(modelprior, "hyper.parameters");
+    if (hyper_params_sexp == R_NilValue || TYPEOF(hyper_params_sexp) != REALSXP) {
+      error("modelprior$hyper.parameters must be numeric for family '%s'", family);
+    }
+    hyper_parameters = REAL(hyper_params_sexp);
+  }
  
 
   gsl_vector_view index_sub = gsl_vector_subvector (index, 1, p - 1);
