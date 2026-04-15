@@ -145,7 +145,7 @@ SEXP glm_gibbsBVS_grow(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 	
 	/* Max. capacity needed: in every iteration, I need to perform n marginal likelihood evaluations
 	   When I visit a previously visit model, I´ll use the marginal likelihood value stored in aux_tree. */
-	int aux_capacity = (burnin + mcmc_size) * (n); 
+	int aux_capacity = nModels * n; /* Previously: one model per variable flip: (burnin + mcmc_size) * (n) */
 	// Stuff for the auxiliary tree
 	SEXP aux_shrinkage   = PROTECT(allocVector(REALSXP, aux_capacity)); ++nProtected;
 	SEXP aux_priorprobs  = PROTECT(allocVector(REALSXP, aux_capacity)); ++nProtected; 
@@ -347,6 +347,22 @@ SEXP glm_gibbsBVS_grow(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 			No need to restore modelold, cause that is done at the beginning of the for loop */
 		}
 
+		if (nUniqueVisited >= aux_capacity) {
+			aux_capacity   = (int)(expand * aux_capacity);
+
+			aux_shrinkage  = resizeVector(aux_shrinkage, aux_capacity);
+			aux_priorprobs = resizeVector(aux_priorprobs, aux_capacity);
+			aux_logmarg    = resizeVector(aux_logmarg, aux_capacity);
+			aux_modeldim   = resizeVector(aux_modeldim, aux_capacity);
+			aux_modelspace = resizeVector(aux_modelspace, aux_capacity);
+			aux_beta       = resizeVector(aux_beta, aux_capacity);
+			aux_se         = resizeVector(aux_se, aux_capacity);
+			aux_R2         = resizeVector(aux_R2, aux_capacity);
+			aux_deviance   = resizeVector(aux_deviance, aux_capacity);
+			aux_Q          = resizeVector(aux_Q, aux_capacity);
+			aux_Rintercept = resizeVector(aux_Rintercept, aux_capacity);
+		}
+
 	}
 
 
@@ -513,7 +529,23 @@ SEXP glm_gibbsBVS_grow(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 			REAL(MCMCprobs)[vars[i].index] += (double) modelold[vars[i].index];
 		}
 		
-		if (nUnique >= nModels && m < (INTEGER(MCMC_Iterations)[0]/thin)){
+		if (nUniqueVisited >= aux_capacity && m < mcmc_size) {
+			aux_capacity   = (int)(expand * aux_capacity);
+
+			aux_shrinkage  = resizeVector(aux_shrinkage, aux_capacity);
+			aux_priorprobs = resizeVector(aux_priorprobs, aux_capacity);
+			aux_logmarg    = resizeVector(aux_logmarg, aux_capacity);
+			aux_modeldim   = resizeVector(aux_modeldim, aux_capacity);
+			aux_modelspace = resizeVector(aux_modelspace, aux_capacity);
+			aux_beta       = resizeVector(aux_beta, aux_capacity);
+			aux_se         = resizeVector(aux_se, aux_capacity);
+			aux_R2         = resizeVector(aux_R2, aux_capacity);
+			aux_deviance   = resizeVector(aux_deviance, aux_capacity);
+			aux_Q          = resizeVector(aux_Q, aux_capacity);
+			aux_Rintercept = resizeVector(aux_Rintercept, aux_capacity);
+		}
+
+		if (nUnique >= nModels && m < mcmc_size)){
 		  // expand nModels and grow result vectors
 		  nModels = (int) (expand*nModels); //add checks to ensure it is not above max int
 		  
