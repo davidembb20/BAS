@@ -125,7 +125,7 @@ SEXP glm_gibbsBVS_grow(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 	int thin = INTEGER(Rthin)[0];
 	int mcmc_size = (INTEGER(MCMC_Iterations)[0] / thin) + 1; // Rounding up
 	
-	double *probs, prior_m=1.0, logmarg_m, postold, postnew; // shrinkage_m
+	double *probs, prior_m=1.0, logmarg_m, postold, postnew; // , shrinkage_m;
 	int i, m, n, *bestmodel;
 	int mcurrent, n_sure;
 
@@ -139,9 +139,6 @@ SEXP glm_gibbsBVS_grow(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 	struct Var *vars = (struct Var *) R_alloc(p, sizeof(struct Var)); // Info about the model variables.
 	probs =  REAL(Rprobs); /* PIPs pointer */
 	n = sortvars(vars, probs, p); /* n = p - 1, if initprobs = "Uniform", right */
-
-	Rprintf("n: %d\n", n);
-	Rprintf("p: %d\n", p);
 	
 	/* Max. capacity needed: in every iteration, I need to perform n marginal likelihood evaluations
 	   When I visit a previously visit model, I´ll use the marginal likelihood value stored in aux_tree. */
@@ -210,10 +207,18 @@ SEXP glm_gibbsBVS_grow(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 		error("glm_gibbsBVS: invalid glm_fit$lpy$lpY in initial model");
 	}
 	logmarg_m = REAL(lpY)[0];
+	
+	SEXP Shrinkage = getListElement(lpy, "shrinkage");
+	if (Shrinkage == R_NilValue || TYPEOF(Shrinkage) != REALSXP || LENGTH(Shrinkage) < 1) {
+		Rprintf("DEBUG glm_gibbsBVS init: invalid shrinkage (pmodel=%d, nUniqueVisited=%d)\n", pmodel, nUniqueVisited);
+		Rprintf("DEBUG glm_gibbsBVS init: TYPEOF(Shrinkage)=%d LENGTH(Shrinkage)=%d\n",
+		        TYPEOF(Shrinkage), LENGTH(Shrinkage));
+		error("glm_gibbsBVS: invalid glm_fit$lpy$shrinkage in initial model");
+	}	
 	//shrinkage_m = REAL(getListElement(getListElement(glm_fit, "lpy"),"shrinkage"))[0];
 
 	prior_m  = compute_prior_probs_MCMC (model, p, modelprior, POS, nofvars, LVL, costs_mat, n_obs);
-	if (!R_finite(prior_m) || prior_m <= 0.0) {
+	if (!R_finite(prior_m) || prior_m <= 0.0 || prior_m >= 1.0) {
 		error("glm_gibbsBVS: invalid initial prior probability");
 	}
 
@@ -310,10 +315,40 @@ SEXP glm_gibbsBVS_grow(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 				}
 				logmarg_m = REAL(lpY)[0];
 				// logmarg_m = REAL(getListElement(getListElement(glm_fit, "lpy"),"lpY"))[0];
-				// shrinkage_m = REAL(getListElement(getListElement(glm_fit, "lpy"), "shrinkage"))[0];
+
 				prior_m = compute_prior_probs_MCMC (model, p, modelprior, POS, nofvars, LVL, costs_mat, n_obs);
+				if (!R_finite(prior_m) || prior_m <= 0.0 || prior_m >= 1.0) {
+					error("glm_gibbsBVS: invalid prior probability");
+				}
 
 				postnew = logmarg_m + log (prior_m);
+
+				Shrinkage = getListElement(lpy, "shrinkage");
+				if (Shrinkage == R_NilValue || TYPEOF(Shrinkage) != REALSXP || LENGTH(Shrinkage) < 1) {
+					Rprintf("DEBUG glm_gibbsBVS init: invalid shrinkage (pmodel=%d, nUniqueVisited=%d)\n", pmodel, nUniqueVisited);
+					Rprintf("DEBUG glm_gibbsBVS init: TYPEOF(Shrinkage)=%d LENGTH(Shrinkage)=%d\n",
+							TYPEOF(Shrinkage), LENGTH(Shrinkage));
+					error("glm_gibbsBVS: invalid glm_fit$lpy$shrinkage during main loop");
+				}
+				//shrinkage_m  = REAL(getListElement(getListElement(glm_fit, "lpy"), "shrinkage"))[0];
+
+				// Resize auxiliary vectors if capacity exceeded
+				if (nUniqueVisited >= aux_capacity) {
+					aux_capacity   = (int)(expand * aux_capacity);
+
+					aux_shrinkage  = resizeVector(aux_shrinkage, aux_capacity);
+					aux_priorprobs = resizeVector(aux_priorprobs, aux_capacity);
+					aux_logmarg    = resizeVector(aux_logmarg, aux_capacity);
+					aux_modeldim   = resizeVector(aux_modeldim, aux_capacity);
+					aux_modelspace = resizeVector(aux_modelspace, aux_capacity);
+					aux_beta       = resizeVector(aux_beta, aux_capacity);
+					aux_se         = resizeVector(aux_se, aux_capacity);
+					aux_R2         = resizeVector(aux_R2, aux_capacity);
+					aux_deviance   = resizeVector(aux_deviance, aux_capacity);
+					aux_Q          = resizeVector(aux_Q, aux_capacity);
+					aux_Rintercept = resizeVector(aux_Rintercept, aux_capacity);
+				}
+
 				/* Insert in aux_tree, even if this model won´t be the next step model... */
 				aux_new_loc = nUniqueVisited;
 				insert_model_tree (aux_tree, vars, n, model, nUniqueVisited);
@@ -321,7 +356,7 @@ SEXP glm_gibbsBVS_grow(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 				SetModel_glm(glm_fit, Rmodel_m, aux_beta, aux_se, aux_modelspace, aux_deviance, aux_R2, aux_Q, 
 					aux_Rintercept, prior_m, sampleprobs, aux_logmarg, aux_shrinkage, aux_priorprobs, nUniqueVisited);
 				++nUniqueVisited;
-			
+
 				UNPROTECT(2);
 
 			} 
@@ -345,22 +380,6 @@ SEXP glm_gibbsBVS_grow(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 			}
 			/* else => staying in the same place at the next step
 			No need to restore modelold, cause that is done at the beginning of the for loop */
-		}
-
-		if (nUniqueVisited >= aux_capacity) {
-			aux_capacity   = (int)(expand * aux_capacity);
-
-			aux_shrinkage  = resizeVector(aux_shrinkage, aux_capacity);
-			aux_priorprobs = resizeVector(aux_priorprobs, aux_capacity);
-			aux_logmarg    = resizeVector(aux_logmarg, aux_capacity);
-			aux_modeldim   = resizeVector(aux_modeldim, aux_capacity);
-			aux_modelspace = resizeVector(aux_modelspace, aux_capacity);
-			aux_beta       = resizeVector(aux_beta, aux_capacity);
-			aux_se         = resizeVector(aux_se, aux_capacity);
-			aux_R2         = resizeVector(aux_R2, aux_capacity);
-			aux_deviance   = resizeVector(aux_deviance, aux_capacity);
-			aux_Q          = resizeVector(aux_Q, aux_capacity);
-			aux_Rintercept = resizeVector(aux_Rintercept, aux_capacity);
 		}
 
 	}
@@ -438,10 +457,38 @@ SEXP glm_gibbsBVS_grow(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 					}
 					logmarg_m = REAL(lpY)[0];
 					// logmarg_m     = REAL(getListElement(getListElement(glm_fit, "lpy"),"lpY"))[0];
-					//shrinkage_m  = REAL(getListElement(getListElement(glm_fit, "lpy"), "shrinkage"))[0];
+					
 					prior_m      = compute_prior_probs_MCMC (model, p, modelprior, POS, nofvars, LVL, costs_mat, n_obs);
-
+					if (!R_finite(prior_m) || prior_m <= 0.0 || prior_m >= 1.0) {
+						error("glm_gibbsBVS: invalid prior probability");
+					}
 					postnew = logmarg_m + log (prior_m);
+
+					Shrinkage = getListElement(lpy, "shrinkage");
+					if (Shrinkage == R_NilValue || TYPEOF(Shrinkage) != REALSXP || LENGTH(Shrinkage) < 1) {
+						Rprintf("DEBUG glm_gibbsBVS init: invalid shrinkage (pmodel=%d, nUniqueVisited=%d)\n", pmodel, nUniqueVisited);
+						Rprintf("DEBUG glm_gibbsBVS init: TYPEOF(Shrinkage)=%d LENGTH(Shrinkage)=%d\n",
+								TYPEOF(Shrinkage), LENGTH(Shrinkage));
+						error("glm_gibbsBVS: invalid glm_fit$lpy$shrinkage during main loop");
+					}
+					//shrinkage_m  = REAL(getListElement(getListElement(glm_fit, "lpy"), "shrinkage"))[0];
+					
+					// Resize auxiliary vectors if capacity exceeded
+					if (nUniqueVisited >= aux_capacity) {
+						aux_capacity   = (int)(expand * aux_capacity);
+
+						aux_shrinkage  = resizeVector(aux_shrinkage, aux_capacity);
+						aux_priorprobs = resizeVector(aux_priorprobs, aux_capacity);
+						aux_logmarg    = resizeVector(aux_logmarg, aux_capacity);
+						aux_modeldim   = resizeVector(aux_modeldim, aux_capacity);
+						aux_modelspace = resizeVector(aux_modelspace, aux_capacity);
+						aux_beta       = resizeVector(aux_beta, aux_capacity);
+						aux_se         = resizeVector(aux_se, aux_capacity);
+						aux_R2         = resizeVector(aux_R2, aux_capacity);
+						aux_deviance   = resizeVector(aux_deviance, aux_capacity);
+						aux_Q          = resizeVector(aux_Q, aux_capacity);
+						aux_Rintercept = resizeVector(aux_Rintercept, aux_capacity);
+					}
 
 					aux_new_loc = nUniqueVisited;
 					insert_model_tree (aux_tree, vars, n, model, nUniqueVisited);
@@ -449,6 +496,7 @@ SEXP glm_gibbsBVS_grow(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 					SetModel_glm(glm_fit, Rmodel_m, aux_beta, aux_se, aux_modelspace, aux_deviance, aux_R2, aux_Q, 
 						aux_Rintercept, prior_m, sampleprobs, aux_logmarg, aux_shrinkage, aux_priorprobs, nUniqueVisited);
 					++nUniqueVisited;
+
 					UNPROTECT(2);
 				} 
 				else {
@@ -528,24 +576,8 @@ SEXP glm_gibbsBVS_grow(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 			real_model[n-1-i] = (double) modelold[vars[i].index];
 			REAL(MCMCprobs)[vars[i].index] += (double) modelold[vars[i].index];
 		}
-		
-		if (nUniqueVisited >= aux_capacity && m < mcmc_size) {
-			aux_capacity   = (int)(expand * aux_capacity);
 
-			aux_shrinkage  = resizeVector(aux_shrinkage, aux_capacity);
-			aux_priorprobs = resizeVector(aux_priorprobs, aux_capacity);
-			aux_logmarg    = resizeVector(aux_logmarg, aux_capacity);
-			aux_modeldim   = resizeVector(aux_modeldim, aux_capacity);
-			aux_modelspace = resizeVector(aux_modelspace, aux_capacity);
-			aux_beta       = resizeVector(aux_beta, aux_capacity);
-			aux_se         = resizeVector(aux_se, aux_capacity);
-			aux_R2         = resizeVector(aux_R2, aux_capacity);
-			aux_deviance   = resizeVector(aux_deviance, aux_capacity);
-			aux_Q          = resizeVector(aux_Q, aux_capacity);
-			aux_Rintercept = resizeVector(aux_Rintercept, aux_capacity);
-		}
-
-		if (nUnique >= nModels && m < mcmc_size)){
+		if (nUnique >= nModels && m < mcmc_size){
 		  // expand nModels and grow result vectors
 		  nModels = (int) (expand*nModels); //add checks to ensure it is not above max int
 		  

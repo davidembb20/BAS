@@ -155,9 +155,6 @@ SEXP glm_gibbsBVS(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 	probs =  REAL(Rprobs); /* PIPs pointer */
 	n = sortvars(vars, probs, p); /* n = p - 1, if initprobs = "Uniform", right */
 
-	Rprintf("n: %d\n", n);
-	Rprintf("p: %d\n", p);
-	
 	/* Max. capacity needed: in every iteration, I need to perform n marginal likelihood evaluations
 	   When I visit a previously visit model, I´ll use the marginal likelihood value stored in aux_tree. */
 	int aux_capacity = (burnin + mcmc_size) * (n); 
@@ -229,7 +226,7 @@ SEXP glm_gibbsBVS(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 
 	
 	prior_m  = compute_prior_probs_MCMC (model, p, modelprior, POS, nofvars, LVL, costs_mat, n_obs);
-	if (!R_finite(prior_m) || prior_m <= 0.0) {
+	if (!R_finite(prior_m) || prior_m <= 0.0 || prior_m >= 1.0) {
 		error("glm_gibbsBVS: invalid initial prior probability");
 	}
 
@@ -327,7 +324,9 @@ SEXP glm_gibbsBVS(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 				logmarg_m = REAL(lpY)[0];
 				// shrinkage_m = REAL(getListElement(getListElement(glm_fit, "lpy"), "shrinkage"))[0];
 				prior_m = compute_prior_probs_MCMC (model, p, modelprior, POS, nofvars, LVL, costs_mat, n_obs);
-
+				if (!R_finite(prior_m) || prior_m <= 0.0 || prior_m >= 1.0) {
+					error("glm_gibbsBVS: invalid prior probability");
+				}
 				postnew = logmarg_m + log (prior_m);
 
 				/* Insert in aux_tree, even if this model won´t be the next step model... */
@@ -440,7 +439,9 @@ SEXP glm_gibbsBVS(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 					logmarg_m = REAL(lpY)[0];
 					//shrinkage_m  = REAL(getListElement(getListElement(glm_fit, "lpy"), "shrinkage"))[0];
 					prior_m = compute_prior_probs_MCMC (model, p, modelprior, POS, nofvars, LVL, costs_mat, n_obs);
-
+					if (!R_finite(prior_m) || prior_m <= 0.0 || prior_m >= 1.0) {
+						error("glm_gibbsBVS: invalid prior probability");
+					}
 					postnew = logmarg_m + log (prior_m);
 
 					aux_new_loc = nUniqueVisited;

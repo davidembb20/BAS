@@ -417,8 +417,8 @@ bas.glmFC <- function(formula, family = binomial(link = "logit"),
 
   if (!GROW & method == "MCMC") method <- "MCMC_OLD"
   if (!GROW & method == "BAS") method <- "BAS_OLD"
-  if (!GROW & method == "Gibbs") method <- "Gibbs"
-  if (!GROW & method == "GibbsBVS") method <- "GibbsBVS"
+  if (!GROW & method == "Gibbs") method <- "Gibbs_nogrow"
+  if (!GROW & method == "GibbsBVS") method <- "GibbsBVS_nogrow"
   
   # p = k + sum_j Lj + 1, as it includes the intercept
   # Shouldn´t we adjust n.models to accomodate the new model space 
@@ -426,7 +426,7 @@ bas.glmFC <- function(formula, family = binomial(link = "logit"),
   if (is.null(n.models)) {
     # n.models <- min(2^p, 2^16) # # change to 2^p to force enumeration regardless p
     n.models <- min(2^(p-1), 2^16) # I´ll always include the intercept / change to 2^(p-1) to force enumeration regardless p
-    if (method == "MCMC" | method == "Gibbs_grow" | method == "GibbsBVS_grow")  
+    if (method == "MCMC" | method == "Gibbs" | method == "GibbsBVS")  
       n.models = min(n.models, n.models.init) 
     # FIXME add n.models.init as argument rather than specify here
   }
@@ -555,7 +555,7 @@ bas.glmFC <- function(formula, family = binomial(link = "logit"),
                    Rlaplace = as.integer(laplace),
                    Rparents = parents, Rexpand = as.numeric(expand)
     ),
-    "Gibbs" = .Call(C_glm_gibbssampler,
+    "Gibbs_nogrow" = .Call(C_glm_gibbssampler,
       RY = y, X = X,
       Roffset = as.numeric(offset),
       Rweights = as.numeric(weights),
@@ -575,12 +575,12 @@ bas.glmFC <- function(formula, family = binomial(link = "logit"),
       Rlaplace = as.integer(laplace),
       Rparents = parents
     ),
-    "Gibbs_grow" = .Call(C_glm_gibbssampler_grow,
+    "Gibbs" = .Call(C_glm_gibbssampler_grow,
       RY = y, X = X,
       Roffset = as.numeric(offset),
       Rweights = as.numeric(weights),
       Rprobinit = prob,
-      Rmodeldim = modeldim,
+      RnModels = as.integer(n.models),
       modelprior = modelprior,
       betaprior = betaprior,
       positions = positions,
@@ -596,7 +596,7 @@ bas.glmFC <- function(formula, family = binomial(link = "logit"),
       Rparents = parents,
       Rexpand = as.numeric(expand)
     ),
-    "GibbsBVS" = .Call(C_glm_gibbsBVS,
+    "GibbsBVS_nogrow" = .Call(C_glm_gibbsBVS,
       RY = y, X = X,
       Roffset = as.numeric(offset),
       Rweights = as.numeric(weights),
@@ -615,12 +615,12 @@ bas.glmFC <- function(formula, family = binomial(link = "logit"),
       Rlaplace = as.integer(laplace),
       Rparents = parents
     ),
-    "GibbsBVS_grow" = .Call(C_glm_gibbsBVS_grow,
+    "GibbsBVS" = .Call(C_glm_gibbsBVS_grow,
       RY = y, X = X,
       Roffset = as.numeric(offset),
       Rweights = as.numeric(weights),
       Rprobinit = prob,
-      Rmodeldim = modeldim,
+      RnModels = as.integer(n.models),
       modelprior = modelprior,
       betaprior = betaprior,
       positions = positions,
@@ -824,6 +824,7 @@ bas.glmFC <- function(formula, family = binomial(link = "logit"),
     # Seria engraçado perceber quantos modelos fora do real candidate set temos antes do resampling;
     # para ver se o resampling é bom ou não    
     result$num_bad_models <- sum (new_priorprobs == 0)
+    #print (result$num_bad_models)
     
     bvs_df <- data.frame (
       models_matrix,
@@ -897,20 +898,21 @@ bas.glmFC <- function(formula, family = binomial(link = "logit"),
     #unique_model_num <- unique (resampled_df$model_num)
     #models_matrix <- models_matrix [unique_model_num, , drop = FALSE]
 
-        #result$old_ratio <- result$n.Unique / (2 ^ (p - 1)) # The denominator includes repeated models
+    #result$old_ratio <- result$n.Unique / (2 ^ (p - 1)) # The denominator includes repeated models
     # We´re treating numerical variables as if they were categorical variables with two levels...
     #levels <- pmax (rowSums (positions), 2)
     #result$new_ratio <- nrow (bvs_df_resamp) / prod ((2 ^ levels) - levels) # The denominator portraits the real number of competing models
 
     count_resamp <- as.data.frame (table(resamp))  
     colnames (count_resamp) <- c ("index_resampled", "count")
+    count_resamp$index_resampled <- as.numeric(as.character(count_resamp$index_resampled))
     
     # Some of the indices in aux_df belong to the same model_num.
-    #aux_df <- expanded_df [count_resamp$index_resampled, ] 
-    #aux_df$freq <- count_resamp$resamp
+    #aux_df <- expanded_df[count_resamp$index_resampled, ]
+    #aux_df$freq <- count_resamp$count
 
-    bvs_df_resamp <- bvs_df [count_resamp$index_resampled, ] 
-    bvs_df_resamp$freq <- count_resamp$resamp
+    bvs_df_resamp <- bvs_df[count_resamp$index_resampled, ]
+    bvs_df_resamp$freq <- count_resamp$count
 
     #bvs_df_resamp <- aux_df %>%
     #  dplyr :: group_by (model_num) %>%
@@ -932,7 +934,9 @@ bas.glmFC <- function(formula, family = binomial(link = "logit"),
     # The denominator in the expression below is the number of MCMC iterations 
     result$postprobs.MCMC <- result$freq / sum(result$freq) # freq is the number of times each model after resampling
     # PIPs for the variables in each model (at the level of the levels)
-    result$probne0.MCMC <- colSums (models_matrix * result$freq) / sum (result$freq)
+    result$probne0.MCMC <- apply(models_matrix, 2, function(col) sum(col * result$freq) / sum(result$freq))
+    
+    # Wrong: colSums (models_matrix * result$freq) / sum (result$freq)
     # Old: apply(models_matrix, 2, function(col) sum(col * result$freq) / sum(result$freq))
 
     # Keep in mind that resampled_df is the expanded dataframe (colMeans without weight is fine...)
@@ -1029,12 +1033,18 @@ bas.glmFC <- function(formula, family = binomial(link = "logit"),
     result$group_pip.RN <- group_pip.RN
 
     # Relative frequencies
-    w <- result$freq # Weights
-    pip.MCMC <- colSums (models_active_vars * w) / sum (w)
+    
+    pip.MCMC <- apply(models_active_vars, 2, function(col) sum(col * result$freq) / sum(result$freq))
+    # Wrong / Old
+    # w <- result$freq # Weights
+    # colSums (models_active_vars * w) / sum (w)    
     names (pip.MCMC) <- depvars
     result$pip.MCMC <- pip.MCMC
+
+    #print (pip.MCMC)
     
-    group_pip.MCMC <- colSums (models_active_groups * w) / sum (w)
+    group_pip.MCMC <- apply(models_active_groups, 2, function(col) sum(col * result$freq) / sum(result$freq))
+    # Old / Wrong: colSums (models_active_groups * w) / sum (w)
     names (group_pip.MCMC) <- as.character (diff_groups)
     result$group_pip.MCMC <- group_pip.MCMC
 

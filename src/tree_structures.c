@@ -569,8 +569,7 @@ void SetModel_glm(SEXP glm_fit, SEXP Rmodel_m, SEXP beta, SEXP se, SEXP modelspa
                   int m) {
   
   REAL(logmarg)[m] = REAL(getListElement(getListElement(glm_fit, "lpy"),"lpY"))[0];
-  REAL(shrinkage)[m] = REAL(getListElement(getListElement(glm_fit, "lpy"),
-                                    "shrinkage"))[0];
+  REAL(shrinkage)[m] = REAL(getListElement(getListElement(glm_fit, "lpy"), "shrinkage"))[0];
   
   REAL(sampleprobs)[m] = 0.0;
   REAL(priorprobs)[m] = prior_m;
