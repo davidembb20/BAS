@@ -145,6 +145,10 @@ double CalculateRSquareFull(double *XtY, double *XtX, double *XtXwork, double *X
                             SEXP Rcoef_m, SEXP Rse_m, int p, int nobs, double yty, double SSY);
 int *GetModel_m(SEXP Rmodel_m, int *model, int p);
 
+
+void Set_less_Model_glm(SEXP glm_fit, SEXP Rmodel_m, double prior_m, 
+                        SEXP logmarg, SEXP modelspace, SEXP priorprobs, int m);
+
 void SetModel_gibbs(int m,
   double logmargy, double shrinkage_m, double prior_m,
   SEXP logmarg, SEXP shrinkage, SEXP priorprobs, SEXP sampleprobs,

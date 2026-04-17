@@ -44,6 +44,8 @@
 #' This structure allows defining grouped costs and enables cost-dependent
 #' model priors such as FND-based priors.
 #'
+#' @param store.less To be used with method = "deterministic". Save memory space
+#' not storing too much stuff so that enumeration for a higher p is feasible
 #' @details
 #' Compared to \code{bas.glm}, this function:
 #' \itemize{
@@ -135,7 +137,7 @@ bas.glmFC <- function(formula, family = binomial(link = "logit"),
                     burnin.iterations = NULL, MCMC.iterations = NULL, thin = 1,
                     control = glm.control(), laplace = FALSE, renormalize = FALSE,
                     force.heredity = FALSE, GROW = TRUE, expand = 1.25, n.models.init = 2500,
-                    bigmem = FALSE) {
+                    bigmem = FALSE, store_less = FALSE) {
   num.updates <- 10
   call <- match.call()
 
@@ -328,11 +330,11 @@ bas.glmFC <- function(formula, family = binomial(link = "logit"),
   offset <- model.offset(mf)
   if (is.null(offset)) offset <- rep(0, nobs)
 
-  null.model = glm(Y ~ 1,
+  null.model <- glm(Y ~ 1,
                       offset = offset,
                       family = eval(call$family))
 
-  null.deviance = null.model$null.deviance
+  null.deviance <- null.model$null.deviance
   loglik_null <- as.numeric(-0.5 * null.deviance)
  
 
@@ -510,10 +512,9 @@ bas.glmFC <- function(formula, family = binomial(link = "logit"),
   #     " y:", sum(!is.finite(y)),
   #     " offset:", sum(!is.finite(offset)),
   #     " weights:", sum(!is.finite(weights)), "\n", sep = "")
- 
-  
+   
   # an R function that directly invokes a compiled C function.
-  # Added methods = c("Gibbs","GibbsBVS", "Gibbs_grow", "GibbsBVS_grow")
+  # Added methods = c("Gibbs","GibbsBVS", "Gibbs_nogrow", "GibbsBVS_nogrow")
   result <- switch(method,
     "MCMC_OLD" = .Call(C_glm_mcmc,
       RY = y, X = X,
@@ -536,24 +537,24 @@ bas.glmFC <- function(formula, family = binomial(link = "logit"),
       Rparents = parents
     ),
     "MCMC" = .Call(C_glm_mcmc_grow,
-                   RY = y, X = X,
-                   Roffset = as.numeric(offset),
-                   Rweights = as.numeric(weights),
-                   Rprobinit = prob,
-                   RnModels = as.integer(n.models),
-                   modelprior = modelprior,
-                   betaprior = betaprior,
-                   positions = positions,
-                   levels = var_levels,
-                   costs = var.costs,
-                   Rbestmodel = bestmodel,
-                   plocal = as.numeric(1.0 - prob.rw),
-                   BURNIN_Iterations = as.integer(burnin.iterations),
-                   MCMC_Iteration = as.integer(MCMC.iterations),
-                   Rthin = as.integer(thin),
-                   family = family, Rcontrol = control,
-                   Rlaplace = as.integer(laplace),
-                   Rparents = parents, Rexpand = as.numeric(expand)
+      RY = y, X = X,
+      Roffset = as.numeric(offset),
+      Rweights = as.numeric(weights),
+      Rprobinit = prob,
+      RnModels = as.integer(n.models),
+      modelprior = modelprior,
+      betaprior = betaprior,
+      positions = positions,
+      levels = var_levels,
+      costs = var.costs,
+      Rbestmodel = bestmodel,
+      plocal = as.numeric(1.0 - prob.rw),
+      BURNIN_Iterations = as.integer(burnin.iterations),
+      MCMC_Iteration = as.integer(MCMC.iterations),
+      Rthin = as.integer(thin),
+      family = family, Rcontrol = control,
+      Rlaplace = as.integer(laplace),
+      Rparents = parents, Rexpand = as.numeric(expand)
     ),
     "Gibbs_nogrow" = .Call(C_glm_gibbssampler,
       RY = y, X = X,
@@ -707,10 +708,10 @@ bas.glmFC <- function(formula, family = binomial(link = "logit"),
       costs = var.costs,
       family = family,
       Rcontrol = control,
-      Rlaplace = as.integer(laplace)
+      Rlaplace = as.integer(laplace),
+      store = as.logical(store.less)
     )
   )
-
 
   result$namesx <- namesx
   result$n <- nrow(X)
@@ -797,14 +798,24 @@ bas.glmFC <- function(formula, family = binomial(link = "logit"),
   )
   colnames(models_matrix) <- namesx # Includes the intercept...
 
+  if (method = "deterministic") {
+  # Check to see if our C_enum model prior functions equal those set in R
+    if (modelprior$family == "SBSB") {result$Rpriorprobs    <- priorSBSB2 (models_matrix [, -1, drop = FALSE], positions)}
+    if (modelprior$family == "CC") {result$Rpriorprobs      <- priorConstConst2 (models_matrix [, -1, drop = FALSE], positions)}
+    if (modelprior$family == "SBC") {result$Rpriorprobs     <- priorSBConst2 (models_matrix [, -1, drop = FALSE], positions)}
+    if (modelprior$family == "SB") {result$Rpriorprobs      <- priorSB2 (models_matrix [, -1, drop = FALSE], positions)}
+    if (modelprior$family == "Uniform") {result$Rpriorprobs <- priorConst2 (models_matrix [, -1, drop = FALSE], positions)}
+  }
+
+
   # We didn´t use accurate model space prior functions in MCMC, nor the real candidate set of models.
-  if (method == "MCMC" | method == "MCMC_OLD" | method == "Gibbs" | method == "GibbsBVS" | method == "Gibbs_grow" | method == "GibbsBVS_grow" ) {
+  if (method == "MCMC" | method == "MCMC_OLD" | method == "Gibbs" | method == "GibbsBVS" | method == "Gibbs_nogrow" | method == "GibbsBVS_nogrow" ) {
     
     # Resampling the models found in MCMC to correct for the real set of competing models...
-    if (modelprior$family == "SBSB") {new_priorprobs <- priorSBSB2 (models_matrix [, -1, drop = FALSE], positions)}
-    if (modelprior$family == "CC") {new_priorprobs <- priorConstConst2 (models_matrix [, -1, drop = FALSE], positions)}
-    if (modelprior$family == "SBC") {new_priorprobs <- priorSBConst2 (models_matrix [, -1, drop = FALSE], positions)}
-    if (modelprior$family == "SB") {new_priorprobs <- priorSB2 (models_matrix [, -1, drop = FALSE], positions)}
+    if (modelprior$family == "SBSB") {new_priorprobs    <- priorSBSB2 (models_matrix [, -1, drop = FALSE], positions)}
+    if (modelprior$family == "CC") {new_priorprobs      <- priorConstConst2 (models_matrix [, -1, drop = FALSE], positions)}
+    if (modelprior$family == "SBC") {new_priorprobs     <- priorSBConst2 (models_matrix [, -1, drop = FALSE], positions)}
+    if (modelprior$family == "SB") {new_priorprobs      <- priorSB2 (models_matrix [, -1, drop = FALSE], positions)}
     if (modelprior$family == "Uniform") {new_priorprobs <- priorConst2 (models_matrix [, -1, drop = FALSE], positions)}
     
     # Ver se faz sentido usar FND como está...
@@ -824,6 +835,10 @@ bas.glmFC <- function(formula, family = binomial(link = "logit"),
     # Seria engraçado perceber quantos modelos fora do real candidate set temos antes do resampling;
     # para ver se o resampling é bom ou não    
     result$num_bad_models <- sum (new_priorprobs == 0)
+    
+    print ("Parou antes de m = MCMC_iter?: ")
+    print (sum(result$freq))
+    #print ("Num bad models before resampling")
     #print (result$num_bad_models)
     
     bvs_df <- data.frame (
@@ -835,12 +850,12 @@ bas.glmFC <- function(formula, family = binomial(link = "logit"),
     )
     
     # Expanding the dataframe for resampling 
-    idx_expanded <- rep.int(seq_len(nrow(bvs_df)), times = result$freq) 
+    #idx_expanded <- rep.int(seq_len(nrow(bvs_df)), times = result$freq) 
     # Contains now repeated models! 
-    expanded_df <- bvs_df [idx_expanded, ] # Care needed when dealing with the freq column
+    #expanded_df <- bvs_df [idx_expanded, ] # Care needed when dealing with the freq column
 
-    if (length(idx_expanded) - sum (result$freq) != 0 | nrow (expanded_df) - sum (result$freq) != 0)
-      warning("error in resampling")
+    #if (length(idx_expanded) - sum (result$freq) != 0 | nrow (expanded_df) - sum (result$freq) != 0)
+    #  warning("error in resampling")
     
     # A questão agora é mesmo: modelos que foram visitados mais vezes, deviam ser mais prováveis de serem resampled:
     # se não dissermos que eles são iguais, garantimos isso fazendo com que apareçam mais vezes como candidatos,
@@ -860,6 +875,9 @@ bas.glmFC <- function(formula, family = binomial(link = "logit"),
     # prob = expanded_df$new_priorprobs / expanded_df$priorprobs 
      # Odds = Prior Probs Corrected / Prior Probs Wrongly Defined (Original)
     #) 
+
+    #print ("Num unique models before resampling")
+    #print (nrow(models_matrix))
 
     resamp <- sample ( # vector with the indices of the models that were resampled
      x = seq_len (nrow(models_matrix)),
@@ -914,6 +932,9 @@ bas.glmFC <- function(formula, family = binomial(link = "logit"),
     bvs_df_resamp <- bvs_df[count_resamp$index_resampled, ]
     bvs_df_resamp$freq <- count_resamp$count
 
+    #print ("New number of unique models")
+    #print (nrow(bvs_df_resamp))
+
     #bvs_df_resamp <- aux_df %>%
     #  dplyr :: group_by (model_num) %>%
     #  dplyr :: summarise (
@@ -926,7 +947,7 @@ bas.glmFC <- function(formula, family = binomial(link = "logit"),
     
     models_matrix <- models_matrix [bvs_df_resamp$model_num, , drop = FALSE] # Seems a safer option
     #models_matrix <- bvs_df_resamp$model.matrix # might have problems with drop? dunno...
-    result$freq <- bvs_df_resamp$freq
+    result$freq <- bvs_df_resamp$freq # Or directly, count_resamp$count
     result$logmarg <- bvs_df_resamp$logmarg
     result$priorprobs <- bvs_df_resamp$new_priorprobs
     result$old_priorprobs <- bvs_df_resamp$priorprobs # Old prior probs used in the MCMC algorithm
@@ -1009,18 +1030,6 @@ bas.glmFC <- function(formula, family = binomial(link = "logit"),
 
   colnames(models_active_groups) <- as.character(diff_groups)
 
-  if (method == "deterministic") {
-    # PIPs at the level of the variables
-    pip <- as.vector (result$postprobs %*% models_active_vars)
-    names (pip) <- depvars
-    result$pip <- pip
-
-    # PIPs at the level of the groups
-    pip_groups <- as.vector (result$postprobs %*% models_active_groups)
-    names (pip_groups) <- as.character (diff_groups)
-    result$pip_groups  <- pip_groups
-  }
-
   if (method == "MCMC" | method == "MCMC_OLD" | method == "Gibbs" | method == "GibbsBVS" | method == "Gibbs_grow" | method == "GibbsBVS_grow") {
 
     # Renormalized likelihood
@@ -1051,14 +1060,15 @@ bas.glmFC <- function(formula, family = binomial(link = "logit"),
   } 
   else {
     
-    # Prior Inclusion Probabilities at the level of the variables
-    var_priorprobs <- as.vector (result$priorprobs %*% models_active_vars)
-    names (var_priorprobs) <- depvars
-    result$var_priorprobs <- var_priorprobs
+    # PIPs at the level of the variables
+    pip <- as.vector (result$postprobs %*% models_active_vars)
+    names (pip) <- depvars
+    result$pip <- pip
 
-    group_priorprobs <- as.vector (result$priorprobs %*% models_active_groups)
-    names (group_priorprobs) <- as.character (diff_groups)
-    result$group_priorprobs <- group_priorprobs
+    # PIPs at the level of the groups
+    pip_groups <- as.vector (result$postprobs %*% models_active_groups)
+    names (pip_groups) <- as.character (diff_groups)
+    result$pip_groups  <- pip_groups
    
   }
 
@@ -1098,7 +1108,7 @@ bas.glmFC <- function(formula, family = binomial(link = "logit"),
     object$postprobs <- postprobs
 
     method <- eval(object$call$method)
-    if (method == "MCMC+BAS" | method == "MCMC" | method == "MCMC_OLD" | method == "Gibbs" | method == "GibbsBVS" | method == "Gibbs_grow" | method == "GibbsBVS_grow") {
+    if (method == "MCMC+BAS" | method == "MCMC" | method == "MCMC_OLD" | method == "Gibbs" | method == "GibbsBVS" | method == "Gibbs_nogrow" | method == "GibbsBVS_nogrow") {
       object$freq <- object$freq[-drop]
       object$probne0.MCMC <- as.vector(object$freq %*% which)/sum(object$freq)
     }

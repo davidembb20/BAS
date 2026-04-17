@@ -588,6 +588,18 @@ void SetModel_glm(SEXP glm_fit, SEXP Rmodel_m, SEXP beta, SEXP se, SEXP modelspa
   
 }
 
+// used with glm_*.c
+void Set_less_Model_glm(SEXP glm_fit, SEXP Rmodel_m, double prior_m, 
+                        SEXP logmarg, SEXP modelspace, SEXP priorprobs, int m) {
+
+  REAL(logmarg)[m] = REAL(getListElement(getListElement(glm_fit, "lpy"),"lpY"))[0];
+  REAL(priorprobs)[m] = prior_m;
+  SET_ELEMENT(modelspace, m, Rmodel_m);
+
+  /* UNPROTECTED (2) is done after the function is called... */
+}
+
+
 // used only with glm_gibbs*.c
 void SetModel_gibbs(int m,
   double logmargy, double shrinkage_m, double prior_m,

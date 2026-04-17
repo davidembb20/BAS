@@ -23,10 +23,11 @@ int withprob(double p);
 SEXP glm_deterministic(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 		       SEXP Rprobinit, SEXP Rmodeldim, SEXP modelprior, SEXP betaprior,
 		       SEXP positions, SEXP levels, SEXP costs,
-			   SEXP family, SEXP Rcontrol, SEXP Rlaplace) {
+			   SEXP family, SEXP Rcontrol, SEXP Rlaplace, SEXP store) {
 	
 	int nProtected = 0;
 	int nModels=LENGTH(Rmodeldim);
+	
 
 	glmstptr * glmfamily;
 	glmfamily = make_glmfamily_structure(family);
@@ -37,44 +38,56 @@ SEXP glm_deterministic(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 	/* ----------------------------------------------------------------
      * NEW: Convert R objects -> GSL
      * ---------------------------------------------------------------*/
-	 gsl_matrix *POS = sexp_to_gsl_matrix (positions);      /* >>> GSL-ADD */
-	 gsl_vector *LVL = sexp_to_gsl_vector (levels);         /* >>> GSL-ADD */
-	 gsl_matrix *costs_mat = sexp_to_gsl_matrix (costs);    /* >>> GSL-ADD */
- 
-	 int nofvars = LENGTH(levels); // Number of competing variables (excluding the intercept)
-	 int n_obs = LENGTH(Y); // Number of observations
- 
+	gsl_matrix *POS = sexp_to_gsl_matrix (positions);      /* >>> GSL-ADD */
+	gsl_vector *LVL = sexp_to_gsl_vector (levels);         /* >>> GSL-ADD */
+	gsl_matrix *costs_mat = sexp_to_gsl_matrix (costs);    /* >>> GSL-ADD */
 
-	//  Rprintf("Allocating Space for %d Models\n", nModels) ;
-	SEXP ANS = PROTECT(allocVector(VECSXP, 14)); ++nProtected;
-	SEXP ANS_names = PROTECT(allocVector(STRSXP, 14)); ++nProtected;
+	int nofvars = LENGTH(levels); // Number of competing variables (excluding the intercept)
+	int n_obs = LENGTH(Y); // Number of observations
+	int store.less = LOGICAL(storeSEXP)[0];
+	
+	if (store.less == 0) {
+		//  Rprintf("Allocating Space for %d Models\n", nModels) ;
+		SEXP ANS = PROTECT(allocVector(VECSXP, 14)); ++nProtected;
+		SEXP ANS_names = PROTECT(allocVector(STRSXP, 14)); ++nProtected;
+
+		SEXP R2 = PROTECT(allocVector(REALSXP, nModels)); ++nProtected;
+		SEXP shrinkage = PROTECT(allocVector(REALSXP, nModels)); ++nProtected;
+
+		SEXP beta = PROTECT(allocVector(VECSXP, nModels)); ++nProtected;
+		SEXP se = PROTECT(allocVector(VECSXP, nModels)); ++nProtected;
+		SEXP deviance = PROTECT(allocVector(REALSXP, nModels)); ++nProtected;
+
+		SEXP sampleprobs = PROTECT(allocVector(REALSXP, nModels)); ++nProtected;
+		SEXP Q = PROTECT(allocVector(REALSXP, nModels)); ++nProtected;
+		SEXP Rintercept = PROTECT(allocVector(REALSXP, nModels)); ++nProtected;
+
+		memset(REAL(shrinkage), 0.0, sizeof(double) *nModels);
+		memset(REAL(sampleprobs), 0.0, sizeof(double) *nModels);
+		memset(REAL(R2), 0.0, sizeof(double) *nModels);
+		memset(REAL(Q), 0.0, sizeof(double) *nModels);
+		memset(REAL(Rintercept), 0.0, sizeof(double) *nModels);
+		memset(REAL(deviance), 0.0, sizeof(double) *nModels);
+
+	} else {
+		//  Rprintf("Allocating Space for %d Models\n", nModels) ;
+		SEXP ANS = PROTECT(allocVector(VECSXP, 6)); ++nProtected;
+		SEXP ANS_names = PROTECT(allocVector(STRSXP, 6)); ++nProtected;
+	}
+	
+	/* Created regardless the value in store.less */
 	SEXP Rprobs = PROTECT(duplicate(Rprobinit)); ++nProtected;
-	SEXP R2 = PROTECT(allocVector(REALSXP, nModels)); ++nProtected;
-	SEXP shrinkage = PROTECT(allocVector(REALSXP, nModels)); ++nProtected;
 	SEXP modelspace = PROTECT(allocVector(VECSXP, nModels)); ++nProtected;
 	SEXP modeldim =  PROTECT(duplicate(Rmodeldim)); ++nProtected;
-	SEXP beta = PROTECT(allocVector(VECSXP, nModels)); ++nProtected;
-	SEXP se = PROTECT(allocVector(VECSXP, nModels)); ++nProtected;
-	SEXP deviance = PROTECT(allocVector(REALSXP, nModels)); ++nProtected;
 	SEXP modelprobs = PROTECT(allocVector(REALSXP, nModels)); ++nProtected;
 	SEXP priorprobs = PROTECT(allocVector(REALSXP, nModels)); ++nProtected;
 	SEXP logmarg = PROTECT(allocVector(REALSXP, nModels)); ++nProtected;
-	SEXP sampleprobs = PROTECT(allocVector(REALSXP, nModels)); ++nProtected;
-	SEXP Q = PROTECT(allocVector(REALSXP, nModels)); ++nProtected;
-	SEXP Rintercept = PROTECT(allocVector(REALSXP, nModels)); ++nProtected;
 	
 	memset(REAL(modelprobs), 0.0, sizeof(double) *nModels);
 	memset(REAL(priorprobs), 0.0, sizeof(double) *nModels);
-	memset(REAL(shrinkage), 0.0, sizeof(double) *nModels);
 	memset(REAL(logmarg), 0.0, sizeof(double) *nModels);
-	memset(REAL(sampleprobs), 0.0, sizeof(double) *nModels);
-	memset(REAL(R2), 0.0, sizeof(double) *nModels);
-	memset(REAL(Q), 0.0, sizeof(double) *nModels);
-	memset(REAL(Rintercept), 0.0, sizeof(double) *nModels);
-	memset(REAL(deviance), 0.0, sizeof(double) *nModels);
 	memset(INTEGER(modeldim), 0, sizeof(int) *nModels);
 	
-;
 	double *probs;
 
 	//get dimensions of all variables
@@ -125,18 +138,22 @@ SEXP glm_deterministic(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 		double prior_m  = compute_prior_probs_enumeration(index, p, modelprior, POS, nofvars, LVL, costs_mat, n_obs);
 		gsl_vector_free(index);
 
-		SetModel_glm(glm_fit, Rmodel_m, beta, se, modelspace, deviance, R2, Q, Rintercept,
-                 prior_m, sampleprobs, logmarg, shrinkage, priorprobs, m);
-		UNPROTECT(2);
+		if (store.less == 0) {
+			SetModel_glm(glm_fit, Rmodel_m, beta, se, modelspace, deviance, R2, Q, Rintercept,
+				prior_m, sampleprobs, logmarg, shrinkage, priorprobs, m);
+			REAL(sampleprobs)[m] = pigamma;
+		} 
+		else {Set_less_Model_glm(glm_fit, Rmodel_m, prior_m, logmarg, modelspace, priorprobs, m);}
 
-		REAL(sampleprobs)[m] = pigamma;
-		
+		UNPROTECT(2);
 	}
 
 	compute_modelprobs(modelprobs, logmarg, priorprobs, k); // Posterior Model Probabilities
 	compute_margprobs_old(models, modelprobs, probs, k, p); // PIPs for each predictor (dummy and not factor level)
 
 	/*    freechmat(models,k); */
+	
+
 	SET_VECTOR_ELT(ANS, 0, Rprobs);
 	SET_STRING_ELT(ANS_names, 0, mkChar("probne0"));
 
@@ -152,33 +169,41 @@ SEXP glm_deterministic(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 	SET_VECTOR_ELT(ANS, 4, priorprobs);
 	SET_STRING_ELT(ANS_names, 4, mkChar("priorprobs"));
 
-	SET_VECTOR_ELT(ANS, 5,sampleprobs);
-	SET_STRING_ELT(ANS_names, 5, mkChar("sampleprobs"));
+	if (store.less == 0) { 
 
-	SET_VECTOR_ELT(ANS, 6, deviance);
-	SET_STRING_ELT(ANS_names, 6, mkChar("deviance"));
+		SET_VECTOR_ELT(ANS, 5,sampleprobs);
+		SET_STRING_ELT(ANS_names, 5, mkChar("sampleprobs"));
 
-	SET_VECTOR_ELT(ANS, 7, beta);
-	SET_STRING_ELT(ANS_names, 7, mkChar("mle"));
+		SET_VECTOR_ELT(ANS, 6, deviance);
+		SET_STRING_ELT(ANS_names, 6, mkChar("deviance"));
+	
+		SET_VECTOR_ELT(ANS, 7, beta);
+		SET_STRING_ELT(ANS_names, 7, mkChar("mle"));
+	
+		SET_VECTOR_ELT(ANS, 8, se);
+		SET_STRING_ELT(ANS_names, 8, mkChar("mle.se"));
+	
+		SET_VECTOR_ELT(ANS, 9, shrinkage);
+		SET_STRING_ELT(ANS_names, 9, mkChar("shrinkage"));
+	
+		SET_VECTOR_ELT(ANS, 10, modeldim);
+		SET_STRING_ELT(ANS_names, 10, mkChar("size"));
+	
+		SET_VECTOR_ELT(ANS, 11, R2);
+		SET_STRING_ELT(ANS_names, 11, mkChar("R2"));
+	
+		SET_VECTOR_ELT(ANS, 12, Q);
+		SET_STRING_ELT(ANS_names, 12, mkChar("Q"));
+	
+		SET_VECTOR_ELT(ANS, 13, Rintercept);
+		SET_STRING_ELT(ANS_names, 13, mkChar("intercept"));
 
-	SET_VECTOR_ELT(ANS, 8, se);
-	SET_STRING_ELT(ANS_names, 8, mkChar("mle.se"));
+	} else {
 
-	SET_VECTOR_ELT(ANS, 9, shrinkage);
-	SET_STRING_ELT(ANS_names, 9, mkChar("shrinkage"));
+		SET_VECTOR_ELT(ANS, 5, modeldim);
+		SET_STRING_ELT(ANS_names, 5, mkChar("size"));
 
-	SET_VECTOR_ELT(ANS, 10, modeldim);
-	SET_STRING_ELT(ANS_names, 10, mkChar("size"));
-
-	SET_VECTOR_ELT(ANS, 11, R2);
-	SET_STRING_ELT(ANS_names, 11, mkChar("R2"));
-
-	SET_VECTOR_ELT(ANS, 12, Q);
-	SET_STRING_ELT(ANS_names, 12, mkChar("Q"));
-
-	SET_VECTOR_ELT(ANS, 13, Rintercept);
-	SET_STRING_ELT(ANS_names, 13, mkChar("intercept"));
-
+	}
 
 	setAttrib(ANS, R_NamesSymbol, ANS_names);
 	UNPROTECT(nProtected);
