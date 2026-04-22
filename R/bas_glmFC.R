@@ -44,7 +44,7 @@
 #' This structure allows defining grouped costs and enables cost-dependent
 #' model priors such as FND-based priors.
 #'
-#' @param store.less To be used with method = "deterministic". Save memory space
+#' @param store_less To be used with method = "deterministic". Save memory space
 #' not storing too much stuff so that enumeration for a higher p is feasible
 #' @details
 #' Compared to \code{bas.glm}, this function:
@@ -440,7 +440,7 @@ bas.glmFC <- function(formula, family = binomial(link = "logit"),
     burnin.iterations <- as.integer(p * 25) # We always have a burn-in period
   }
   
-  
+  # This function prevents enumeration for p > 25
   n.models <- as.integer(normalize.n.models(n.models, p, prob, method, bigmem))
 
   modelprior <- normalize.modelprior(modelprior, p)
@@ -490,6 +490,9 @@ bas.glmFC <- function(formula, family = binomial(link = "logit"),
   if (betaprior$family == "betaprime" & is.null(betaprior$hyper.parameters$n)) {
     betaprior$hyper.parameters$n <- as.numeric(nobs)
   }
+
+  if (store_less & method == "deterministic") {method <- "deterministic_less"}
+
 
   # call this to coerce response as needed for glm
  
@@ -700,7 +703,7 @@ bas.glmFC <- function(formula, family = binomial(link = "logit"),
       Roffset = as.numeric(offset),
       Rweights = as.numeric(weights),
       Rprobinit = prob,
-      Rmodeldim = modeldim,
+      Rmodeldim = modeldim, # model dim is a vector with dimension = n.models
       modelprior = modelprior,
       betaprior = betaprior,
       positions = positions,
@@ -708,8 +711,22 @@ bas.glmFC <- function(formula, family = binomial(link = "logit"),
       costs = var.costs,
       family = family,
       Rcontrol = control,
-      Rlaplace = as.integer(laplace),
-      store = as.logical(store.less)
+      Rlaplace = as.integer(laplace)
+    ),
+    "deterministic_less" = .Call(C_glm_deterministic_less,
+      RY = y, X = X,
+      Roffset = as.numeric(offset),
+      Rweights = as.numeric(weights),
+      Rprobinit = prob,
+      Rmodeldim = modeldim, # model dim is a vector with dimension = n.models
+      modelprior = modelprior,
+      betaprior = betaprior,
+      positions = positions,
+      levels = var_levels,
+      costs = var.costs,
+      family = family,
+      Rcontrol = control,
+      Rlaplace = as.integer(laplace)
     )
   )
 
@@ -798,14 +815,14 @@ bas.glmFC <- function(formula, family = binomial(link = "logit"),
   )
   colnames(models_matrix) <- namesx # Includes the intercept...
 
-  if (method = "deterministic") {
-  # Check to see if our C_enum model prior functions equal those set in R
-    if (modelprior$family == "SBSB") {result$Rpriorprobs    <- priorSBSB2 (models_matrix [, -1, drop = FALSE], positions)}
-    if (modelprior$family == "CC") {result$Rpriorprobs      <- priorConstConst2 (models_matrix [, -1, drop = FALSE], positions)}
-    if (modelprior$family == "SBC") {result$Rpriorprobs     <- priorSBConst2 (models_matrix [, -1, drop = FALSE], positions)}
-    if (modelprior$family == "SB") {result$Rpriorprobs      <- priorSB2 (models_matrix [, -1, drop = FALSE], positions)}
-    if (modelprior$family == "Uniform") {result$Rpriorprobs <- priorConst2 (models_matrix [, -1, drop = FALSE], positions)}
-  }
+  # if (method == "deterministic" | method == "deterministic_less") {
+  # # Check to see if our C_enum model prior functions equal those set in R
+  #   if (modelprior$family == "SBSB") {result$Rpriorprobs    <- priorSBSB2 (models_matrix [, -1, drop = FALSE], positions)}
+  #   if (modelprior$family == "CC") {result$Rpriorprobs      <- priorConstConst2 (models_matrix [, -1, drop = FALSE], positions)}
+  #   if (modelprior$family == "SBC") {result$Rpriorprobs     <- priorSBConst2 (models_matrix [, -1, drop = FALSE], positions)}
+  #   if (modelprior$family == "SB") {result$Rpriorprobs      <- priorSB2 (models_matrix [, -1, drop = FALSE], positions)}
+  #   if (modelprior$family == "Uniform") {result$Rpriorprobs <- priorConst2 (models_matrix [, -1, drop = FALSE], positions)}
+  # }
 
 
   # We didn´t use accurate model space prior functions in MCMC, nor the real candidate set of models.
