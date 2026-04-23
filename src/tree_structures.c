@@ -627,6 +627,17 @@ REAL(Rintercept)[m] = Rintercept_m;
 
 }
 
+void Set_less_Model_gibbs (int m,
+  double logmargy, double prior_m,
+  SEXP logmarg, SEXP priorprobs,
+  SEXP modelspace_m, SEXP modelspace) {
+  
+REAL(logmarg)[m]     = logmargy;
+REAL(priorprobs)[m] = prior_m;
+SET_VECTOR_ELT(modelspace, m, modelspace_m);
+
+}
+
 void SetModel_lm(double logmarg_m, double shrinkage_m, double prior_m, 
                  SEXP sampleprobs, SEXP Rlogmarg, SEXP shrinkage, SEXP priorprobs,
                  SEXP Rcoef_m, SEXP Rse_m, SEXP Rmodel_m, double mse_m, double R2_m,

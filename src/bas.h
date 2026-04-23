@@ -157,6 +157,11 @@ void SetModel_gibbs(int m,
   SEXP beta_m, SEXP se_m, SEXP modelspace_m,
   SEXP beta, SEXP se, SEXP modelspace);
 
+void Set_less_Model_gibbs (int m,
+  double logmargy, double prior_m,
+  SEXP logmarg, SEXP priorprobs,
+  SEXP modelspace_m, SEXP modelspace);
+
 
 /* Same */
 double Bernoulli(int *model, int p, double *hyper); /* gsl_vector *index */ 
