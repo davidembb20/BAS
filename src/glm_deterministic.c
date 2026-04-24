@@ -23,7 +23,7 @@ int withprob(double p);
 SEXP glm_deterministic(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 		       SEXP Rprobinit, SEXP Rmodeldim, SEXP modelprior, SEXP betaprior,
 		       SEXP positions, SEXP levels, SEXP costs,
-			   SEXP family, SEXP Rcontrol, SEXP Rlaplace, SEXP store) {
+			   SEXP family, SEXP Rcontrol, SEXP Rlaplace) {
 	
 	int nProtected = 0;
 	int nModels=LENGTH(Rmodeldim);
