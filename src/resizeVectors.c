@@ -75,7 +75,7 @@ switch (TYPEOF(x)) {
     memcpy(dval, REAL(x), fmin2(len_new,lenx) * sizeof(double));
     break;
   case CPLXSXP:
-    for (i = 0; i < len_new; i++)
+    for (i = 0; i < len_new; i++) {
       if (i < lenx) {
         COMPLEX(rval)[i] = COMPLEX(x)[i];
       }
@@ -83,15 +83,17 @@ switch (TYPEOF(x)) {
         COMPLEX(rval)[i].r = NA_REAL;
         COMPLEX(rval)[i].i = NA_REAL;
       }
-      break;
+    }
+    break;
   case STRSXP:
-    for (i = 0; i < len_new; i++)
+    for (i = 0; i < len_new; i++) {
       if (i < lenx) {
         SET_STRING_ELT(rval, i, STRING_ELT(x, i));
       }
       else
         SET_STRING_ELT(rval, i, NA_STRING);
-      break;
+    }
+    break;
   case LISTSXP:
     for (t = rval; t != R_NilValue; t = CDR(t), x = CDR(x)) {
       SETCAR(t, CAR(x));
@@ -99,19 +101,21 @@ switch (TYPEOF(x)) {
     }
     break;
   case VECSXP:
-    for (i = 0; i < len_new; i++)
+    for (i = 0; i < len_new; i++){
       if (i < lenx) {
         SET_VECTOR_ELT(rval, i, VECTOR_ELT(x, i));
       }
-      break;
+    }
+    break;
   case RAWSXP:
-    for (i = 0; i < len_new; i++)
+    for (i = 0; i < len_new; i++) {
       if (i < lenx) {
         RAW(rval)[i] = RAW(x)[i];
       }
       else
         RAW(rval)[i] = (Rbyte) 0;
-      break;
+    }
+    break;
   default:
     error("cannot set length of object of type '%s'",
           type2char(TYPEOF(x)));
