@@ -31,9 +31,9 @@ priorSBSB2 <- function (models_matrix, positions)
 	
 	for (i in seq_len (nrow (models_matrix))) { # For each model (index)
 
-        # Active Variables (not at the level of the levels
+        # Active Variables (not at the level of the levels)
 		act.vars <- models_matrix [i, ] %*% t(positions)
-		# Active Levels for Factors
+		# Active Factors (with num of active Levels)
 		act.levelsf <- act.vars [levels > 1]
 
         log_Marg <- log (num_vars + 1) + lchoose (num_vars, sum (act.vars != 0))
@@ -47,21 +47,21 @@ priorSBSB2 <- function (models_matrix, positions)
 			numberof <- rank.levels (levels_f[act.levelsf > 0]) 
 			# The argument for rank.levels is a vector of levels for the active factors only
 
-            # If the model is not saturated nor oversaturated
+            # If the model is not "saturated" nor overparameterized
 			if (sum(act.levelsf >= (levels_f-1)) == 0){ # => act.levelsf < levelsf - 1, for every factor
-				aux <- sum (act.levelsf)
-				m2 <- length (levels_f[act.levelsf > 0])
+				aux <- sum (act.levelsf) # ii) from Result S.2 of the supplementary materials: k(gamma,delta) -> model dimension
+				m2 <- length (levels_f[act.levelsf > 0]) # Number of active factors
 				log_Cond <- log (numberof[as.character(aux)]) + log (sum (levels_f[act.levelsf > 0]) - 2 * m2 + 1) 
 				# Formula (15) from professor´s paper, pp.6
 				new_priorprobs [i] <- exp (-(log_Cond + log_Marg))
 			}
-			# If the model contains at least one level saturated then return 0:
+			# If the model contains at least one factor "saturated" then return 0:
 			else if (sum(act.levelsf[act.levelsf>0] == (levels_f[act.levelsf>0]-1)) >= 1) {
 				new_priorprobs [i] <- 0
 			}
-			else { # keep the rest (oversaturated models)
-				aux <- sum (act.levelsf[act.levelsf == levels_f] - 1) + sum(act.levelsf[act.levelsf < levels_f])
-				m2 <- length (levels_f[act.levelsf > 0])
+			else { # Overparameterized Models
+				aux <- sum (act.levelsf[act.levelsf == levels_f] - 1) + sum(act.levelsf[act.levelsf < levels_f]) # ii) from Result S.2 of the supplementary materials: k(gamma,delta) -> model dimension
+				m2 <- length (levels_f[act.levelsf > 0]) # Number of active factors
 				log_Cond <- log (numberof[as.character(aux)]) + log (sum (levels_f[act.levelsf > 0]) - 2 * m2 + 1) 
 				# Formula (15) from professor´s paper, pp.6
 				new_priorprobs [i] <- exp (-(log_Cond + log_Marg))
