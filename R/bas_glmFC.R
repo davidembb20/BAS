@@ -433,8 +433,8 @@ bas.glmFC <- function(formula, family = binomial(link = "logit"),
     # FIXME add n.models.init as argument rather than specify here
   }
   if (is.null(MCMC.iterations)) {
-    #MCMC.iterations <- as.integer(p * 1000)
-    MCMC.iterations <- as.integer(max(10000, p * 1000)) # David
+    MCMC.iterations <- as.integer(p * 1000)
+    #MCMC.iterations <- as.integer(max(10000, p * 1000)) # David
   }
   if (is.null(burnin.iterations)){
     burnin.iterations <- as.integer(p * 25) # We always have a burn-in period
@@ -444,10 +444,7 @@ bas.glmFC <- function(formula, family = binomial(link = "logit"),
   n.models <- as.integer(normalize.n.models(n.models, p, prob, method, bigmem))
 
   modelprior <- normalize.modelprior(modelprior, p)
-
   modeldim <- as.integer(rep(0, n.models))
-
-  #print(MCMC.iterations)
 
   # For method = "BAS"
   if (is.null(update)) {
@@ -465,17 +462,15 @@ bas.glmFC <- function(formula, family = binomial(link = "logit"),
   }
 
   #  check on priors
-  
+
   if (!inherits(betaprior, "prior")) stop("prior on coeeficients must be an object of type 'prior'")
   
-
   betaprior$hyper.parameters$loglik_null <- loglik_null
   #  	browser()
 
   if (betaprior$family == "BIC" & is.null(betaprior$n)) {
     betaprior <- bic.prior(as.numeric(nobs))
   }
-
 
   if (betaprior$family == "hyper-g/n" & is.null(betaprior$n)) {
     betaprior$hyper.parameters$theta <- 1 / nobs
@@ -493,29 +488,11 @@ bas.glmFC <- function(formula, family = binomial(link = "logit"),
 
   if (store_less & method == "deterministic") {method <- "deterministic_less"}
 
-
   # call this to coerce response as needed for glm
- 
   y = Y
   eval(family$initialize)
   storage.mode(y) <- "double"
   
-  # Debug diagnostics before entering compiled samplers.
-  # cat("bas.glmFC debug: method=", method,
-  #     " family=", family$family,
-  #     " link=", family$link, "\n", sep = "")
-  # cat("bas.glmFC debug: dim(X)=", paste(dim(X), collapse = "x"),
-  #     " length(y)=", length(y),
-  #     " length(offset)=", length(offset),
-  #     " length(weights)=", length(weights), "\n", sep = "")
-  # cat("bas.glmFC debug: dim(positions)=", paste(dim(positions), collapse = "x"),
-  #     " length(var_levels)=", length(var_levels),
-  #     " dim(var.costs)=", paste(dim(var.costs), collapse = "x"), "\n", sep = "")
-  # cat("bas.glmFC debug: invalid counts => X:", sum(!is.finite(X)),
-  #     " y:", sum(!is.finite(y)),
-  #     " offset:", sum(!is.finite(offset)),
-  #     " weights:", sum(!is.finite(weights)), "\n", sep = "")
-   
   # an R function that directly invokes a compiled C function.
   # Added methods = c("Gibbs","GibbsBVS", "Gibbs_nogrow", "GibbsBVS_nogrow")
   result <- switch(method,
@@ -741,9 +718,10 @@ bas.glmFC <- function(formula, family = binomial(link = "logit"),
   result$n.models <- length(result$postprobs)
   result$include.always <- keep
 
-  if (method == "deterministic") { # Add for BAS/BAS_OLD as well?
+  if (method == "deterministic" | method == "deterministic_less") { # Add for BAS/BAS_OLD as well?
     result$postprobs.MCMC <- result$postprobs
     result$probne0.MCMC <- result$probne0
+    names(result$probne0) <- namesx    
   }
 
   #-------
@@ -757,6 +735,7 @@ bas.glmFC <- function(formula, family = binomial(link = "logit"),
 
   df <- rep(nobs - 1, result$n.models)
 
+  # When using this with GibbsBVS, c
   if (betaprior$class == "IC") df <- df - result$size + 1
   
   result$df <- df
@@ -772,9 +751,9 @@ bas.glmFC <- function(formula, family = binomial(link = "logit"),
   result$model <- mf
 
   # drop null model if it is present
-  if (betaprior$family == "Jeffreys" & (min(result$size) == 1)) result <- .drop.null.bas(result)
+  # if (betaprior$family == "Jeffreys" & (min(result$size) == 1)) result <- .drop.null.bas(result)
   
-  # github issue #74. drop models with zero prior probability
+  #github issue #74. drop models with zero prior probability
   if (any(result$priorprobs == 0)) {
     drop.models = result$priorprobs != 0
     
@@ -815,16 +794,6 @@ bas.glmFC <- function(formula, family = binomial(link = "logit"),
   )
   colnames(models_matrix) <- namesx # Includes the intercept...
 
-  # if (method == "deterministic" | method == "deterministic_less") {
-  # # Check to see if our C_enum model prior functions equal those set in R
-  #   if (modelprior$family == "SBSB") {result$Rpriorprobs    <- priorSBSB2 (models_matrix [, -1, drop = FALSE], positions)}
-  #   if (modelprior$family == "CC") {result$Rpriorprobs      <- priorConstConst2 (models_matrix [, -1, drop = FALSE], positions)}
-  #   if (modelprior$family == "SBC") {result$Rpriorprobs     <- priorSBConst2 (models_matrix [, -1, drop = FALSE], positions)}
-  #   if (modelprior$family == "SB") {result$Rpriorprobs      <- priorSB2 (models_matrix [, -1, drop = FALSE], positions)}
-  #   if (modelprior$family == "Uniform") {result$Rpriorprobs <- priorConst2 (models_matrix [, -1, drop = FALSE], positions)}
-  # }
-
-
   # We didn´t use accurate model space prior functions in MCMC, nor the real candidate set of models.
   if (method == "MCMC" | method == "MCMC_OLD" | method == "Gibbs" | method == "GibbsBVS" | method == "Gibbs_nogrow" | method == "GibbsBVS_nogrow" ) {
     
@@ -850,14 +819,9 @@ bas.glmFC <- function(formula, family = binomial(link = "logit"),
     }
 
     # Seria engraçado perceber quantos modelos fora do real candidate set temos antes do resampling;
-    # para ver se o resampling é bom ou não    
+    # para ver se o resampling é bom ou não
     result$num_bad_models <- sum (new_priorprobs == 0)
-    
-    print ("Parou antes de m = MCMC_iter?: ")
-    print (sum(result$freq))
-    #print ("Num bad models before resampling")
-    #print (result$num_bad_models)
-    
+        
     bvs_df <- data.frame (
       models_matrix,
       logmarg = result$logmarg,
@@ -903,7 +867,7 @@ bas.glmFC <- function(formula, family = binomial(link = "logit"),
      # Allows duplicate models to be selected
      replace = TRUE,
      # Importance resampling of model indices
-     prob = result$freq * (bvs_df$new_priorprobs / bvs_df$priorprobs) 
+     prob = result$freq * exp(log(bvs_df$new_priorprobs) - log(bvs_df$priorprobs))
      # Odds = Frequency * (Prior Probs Corrected / Prior Probs Wrongly Defined (Original))
     ) 
         
@@ -964,6 +928,7 @@ bas.glmFC <- function(formula, family = binomial(link = "logit"),
     
     models_matrix <- models_matrix [bvs_df_resamp$model_num, , drop = FALSE] # Seems a safer option
     #models_matrix <- bvs_df_resamp$model.matrix # might have problems with drop? dunno...
+    result$size <- rowSums (models_matrix) 
     result$freq <- bvs_df_resamp$freq # Or directly, count_resamp$count
     result$logmarg <- bvs_df_resamp$logmarg
     result$priorprobs <- bvs_df_resamp$new_priorprobs
@@ -995,22 +960,17 @@ bas.glmFC <- function(formula, family = binomial(link = "logit"),
 
   # models_w_logmarg <- cbind (models_matrix, bvs_df_resamp$logmarg)
   # Matrix with the binary representation of the models and the log marginal likelihood of each model
-  # colnames(models_w_logmarg) <- c(namesx, "log_marg") 
+  # colnames(models_w_logmarg) <- c(namesx, "logmarg") 
   
   # Trying to identify the Null Model index (sometimes it is not the first model to be enumerated)
-  # only_zero <- sapply(list_models, function(x) length(x) == 1 && x == 0)
-  # null_model_index <- which (only_zero)
+  only_zero <- sapply(list_models, function(x) length(x) == 1 && x == 0)
+  null_model_index <- which (only_zero)
 
-  # if (length(null_model_index) > 0L) {
-    
-  #   lBFi0 <- exp(log_marg - log_marg[null_model_index[1L]]) # log(BF) of each model (including repeated ones) to the null model
-  #   models_w_lBF <- cbind(models_matrix, log_BFi0 = lBFi0)
-
-  #   #colnames(models_w_lBF) <- c (namesx, "log_BFi0")
-
-  #   result$lBFi0 <- lBFi0
-  #   result$models_w_lBF <- models_w_lBF [, -1]
-  # }
+  if (length(null_model_index) > 0L) {
+    # Bayes Factor (BF) to the null model
+    BFi0 <- exp(result$logmarg - result$logmarg[null_model_index[1L]]) 
+    result$BFi0 <- BFi0
+  }
 
   # Now we convert the model indicator matrix to specify only the active variables in each model (not looking at the levels of factors)
 	if (dim(positions)[1] > 1) # if there is more than one competing variable
@@ -1026,7 +986,7 @@ bas.glmFC <- function(formula, family = binomial(link = "logit"),
       as.numeric(models_matrix [, -1, drop = FALSE] %*% t(positions)>0),
       ncol = 1 #, nrow = dim(models_matrix)[1], i.e., number of models
       )
-    
+      
   colnames(models_active_vars) <- depvars
   # matrix product symbol, %*%, is sometimes confused with the pipe operator, %>%
   
@@ -1088,9 +1048,6 @@ bas.glmFC <- function(formula, family = binomial(link = "logit"),
     result$pip_groups  <- pip_groups
    
   }
-
-  model_dim <- rowSums (models_matrix) - 1 # To exclude the intercept
-  result$model_dim <- model_dim
 
   num_active_vars <- rowSums(models_active_vars) # models_active_vars doesn´t include the intercept
   result$num_active_vars <- num_active_vars

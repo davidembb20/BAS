@@ -98,6 +98,7 @@ gsl_matrix *sexp_to_gsl_matrix(SEXP m);
 gsl_vector *sexp_to_gsl_vector(SEXP v);
 
 int *GetModel_all (int* model_m, int pmodel, int p);
+void PrintModel_m(SEXP Rmodel_m, int *model, int p);
 int model_rank (int *index, int p, gsl_matrix *positions, int nofvars, int *levels);
 double compute_prior_probs_MCMC (int * model, int p, SEXP modelprior,
                                  gsl_matrix *positions, int nofvars,
@@ -110,6 +111,22 @@ double prior_group (gsl_vector * index, gsl_matrix * positions, int nofvars, gsl
                     int p, double * b, gsl_matrix * costs, double c0, int n);
 int bernoulli_draw (double prob);
 void randperm (int *perm, int p);   
+
+void Set_less_Model_glm(SEXP glm_fit, SEXP Rmodel_m, double prior_m, 
+                        SEXP logmarg, SEXP modelspace, SEXP priorprobs, int m);
+
+void SetModel_gibbs(int m,
+  double logmargy, double shrinkage_m, double prior_m,
+  SEXP logmarg, SEXP shrinkage, SEXP priorprobs, SEXP sampleprobs,
+  double deviance_m, double R2_m, double Q_m, double Rintercept_m,
+  SEXP deviance, SEXP R2, SEXP Q, SEXP Rintercept,
+  SEXP beta_m, SEXP se_m, SEXP modelspace_m,
+  SEXP beta, SEXP se, SEXP modelspace);
+
+void Set_less_Model_gibbs (int m,
+  double logmargy, double prior_m,
+  SEXP logmarg, SEXP priorprobs,
+  SEXP modelspace_m, SEXP modelspace);
 
 // Model Prior functions for MCMC
 double SBSB_prior (gsl_vector * index, gsl_matrix * positions, int nofvars, gsl_vector * levels, int p);
@@ -141,29 +158,10 @@ double FNDConst_enum_prior (gsl_vector * index, gsl_matrix * positions, int nofv
 double FNDSB_enum_prior (gsl_vector * index, gsl_matrix * positions, int nofvars, gsl_vector * levels,
        int p, double * b, gsl_matrix * costs, double * marginal_costs, double c0, int n);
 
+/* Same */
 double CalculateRSquareFull(double *XtY, double *XtX, double *XtXwork, double *XtYwork,
                             SEXP Rcoef_m, SEXP Rse_m, int p, int nobs, double yty, double SSY);
 int *GetModel_m(SEXP Rmodel_m, int *model, int p);
-
-
-void Set_less_Model_glm(SEXP glm_fit, SEXP Rmodel_m, double prior_m, 
-                        SEXP logmarg, SEXP modelspace, SEXP priorprobs, int m);
-
-void SetModel_gibbs(int m,
-  double logmargy, double shrinkage_m, double prior_m,
-  SEXP logmarg, SEXP shrinkage, SEXP priorprobs, SEXP sampleprobs,
-  double deviance_m, double R2_m, double Q_m, double Rintercept_m,
-  SEXP deviance, SEXP R2, SEXP Q, SEXP Rintercept,
-  SEXP beta_m, SEXP se_m, SEXP modelspace_m,
-  SEXP beta, SEXP se, SEXP modelspace);
-
-void Set_less_Model_gibbs (int m,
-  double logmargy, double prior_m,
-  SEXP logmarg, SEXP priorprobs,
-  SEXP modelspace_m, SEXP modelspace);
-
-
-/* Same */
 double Bernoulli(int *model, int p, double *hyper); /* gsl_vector *index */ 
 double compute_prior_probs(int *model, int modeldim, int p, SEXP modelprior, int noInclusionIs1); /* Used in lm*.c only */
 void SetModel_glm(SEXP glm_fit, SEXP Rmodel_m, SEXP beta, SEXP se, SEXP modelspace,

@@ -487,6 +487,19 @@ int *GetModel_m(SEXP Rmodel_m, int *model, int p) {
   return model_m;
 }
 
+void PrintModel_m(SEXP Rmodel_m, int *model, int p) {
+  int *model_m = INTEGER(Rmodel_m);
+  for (int j = 0, l=0; j < p; j++) {
+    if (model[j] == 1) {
+      model_m[l++] = j; /* 1st stores and then increments */
+      Rprintf("%d ", j);
+    }
+  }
+  Rprintf("\n");
+}
+
+
+
 /* Added by David (used for the correction of the marginal likelihood / Bayes Factor computation):
    Returns a pointer of a binary vector with 1´s for active variables 
    (at the level of the dummies; != positionsx R object) */

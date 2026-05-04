@@ -111,6 +111,7 @@ void compute_modelprobs_Bayes_HT(SEXP Rmodelprobs,  SEXP Rlogmarg, SEXP Rpriorpr
   }
 }
 
+/* probne0 computation */
 void compute_margprobs(SEXP modelspace, SEXP modeldim, SEXP Rmodelprobs, double *margprobs, 
                        int k, int p) {
 	int m, j, *model;
