@@ -79,8 +79,6 @@ SEXP glm_gibbsBVS_grow(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 	probs = REAL(Rprobs); /* PIPs pointer */
 	struct Var *vars = (struct Var *) R_alloc(p, sizeof(struct Var)); // Info about the model variables.
 	n = sortvars(vars, probs, p); /* n = p - 1, if initprobs = "Uniform", right */
-	Rprintf("n = %d\n", n);
-	Rprintf("p = %d\n", p);
 	
 	/* Max. capacity needed: in every iteration, I need to perform n marginal likelihood evaluations
 	   When I visit a previously visit model, I´ll use the marginal likelihood value stored in aux_tree. */
@@ -99,7 +97,6 @@ SEXP glm_gibbsBVS_grow(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 	}
 
 	GetRNGstate();
-
 	m = 0;
 	bestmodel = INTEGER(Rbestmodel);
 
@@ -130,19 +127,13 @@ SEXP glm_gibbsBVS_grow(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 	// Evaluate logmarg_m and shrinkage_m
 	logmarg_m= REAL(getListElement(getListElement(glm_fit, "lpy"),"lpY"))[0];
 	prior_m  = compute_prior_probs_MCMC (model, p, modelprior, POS, nofvars, LVL, costs_mat, n_obs);
-	//Rprintf("Prior prob: %.15f \n",prior_m);
+	postold = logmarg_m + log(prior_m);
+	INTEGER(Rcounts)[0] = 1; // m = 0
+	nUniqueVisited++; // is now 1
 
-	/* Set in Output Tree */ 
-	Set_less_Model_glm(glm_fit, Rmodel_m, prior_m, logmarg, modelspace, priorprobs, m);
 	/* Set in Auxiliary Tree */
 	Set_less_Model_glm(glm_fit, Rmodel_m, prior_m, aux_logmarg, aux_modelspace, aux_priorprobs, m);
 	UNPROTECT(2);
-
-    INTEGER(Rcounts)[0] = 1; // m = 0
-	postold =  REAL(logmarg)[m] + log(REAL(priorprobs)[m]);
-	nUnique++; nUniqueVisited++; // each is now 1
-
-	int moved = 0, stucked = 0;
 
 	// Burn-in Sampling loop
 	int *modelold = ivecalloc(p);
@@ -151,8 +142,8 @@ SEXP glm_gibbsBVS_grow(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 	
 	int newmodel = 0, old_loc = 0, new_loc, thin_count = 0;
 	int aux_old_loc = 0, aux_new_loc;
-	int component = 1, oldcomponent = 1, newcomponent = 1;
-	double ratio = 0.0;
+	int component, oldcomponent, newcomponent;
+	double log_ratio, max_denom, log_denom;
 	
 	// Burn-In Period (old: current model and new: proposal / alternative model that serves as an auxiliary for the next step model)
 	/* As there´s no thinning, it can´t be enourmous, if thin > 1 */
@@ -165,14 +156,15 @@ SEXP glm_gibbsBVS_grow(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 		randperm (perm, n); /* random permutation: can´t shuffle the intercept */
 
 		for (int idx = 0; idx < n; idx++) { // Loop across all possible variables (except the intercept)...
-		
+			
 			// Copying an array of integers from modelold to model
 			memcpy (model, modelold, sizeof(int)*p);
 
 			/* Next Variable Flip (perm[idx] is always different from intercept_pos) */
 			component    = perm [idx]; // Randomly chosen variable
-			//Rprintf("component: %d \n", component);
+			// Rprintf("vars[component].index]: %d \n", vars[component].index);
 			oldcomponent = model [vars[component].index]; // Was this chosen variable already in the model or not (1 or 0)
+			// Rprintf ("Already in the model? Y/N %d \n", oldcomponent);
 			model [vars[component].index] = 1 - model [vars[component].index];  /* Auxiliary model (one-bit flip)
 			necessary for the computation of the next model */
 	
@@ -204,19 +196,27 @@ SEXP glm_gibbsBVS_grow(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 
 			if (newmodel == 1) {
 
-				Rprintf ("newmodel=1\n");
-
 				PROTECT (Rmodel_m = allocVector(INTSXP, pmodel)); // pmodel is the number of active variables in the model
 				GetModel_m (Rmodel_m, model, p); // Fill Rmodel_m with indices of active variables
-				//PrintModel_m(Rmodel_m, model, p);
+				// PrintModel_m(Rmodel_m, model, p);
 
 				glm_fit = PROTECT(glm_FitModel(X, Y, Rmodel_m, Roffset, Rweights, glmfamily,
 											   Rcontrol, Rlaplace, betapriorfamily, positions, levels));
 
 				logmarg_m = REAL(getListElement(getListElement(glm_fit, "lpy"),"lpY"))[0];
 				prior_m = compute_prior_probs_MCMC (model, p, modelprior, POS, nofvars, LVL, costs_mat, n_obs);
-				// Rprintf("Prior prob: %f \n",prior_m);
 				postnew = logmarg_m + log (prior_m);
+				if (!isfinite(postnew)) {
+
+					Rprintf("logmarg_m: %.17g \n", logmarg_m);
+					Rprintf("log(prior_m): %.17g \n", log (prior_m));
+
+					warning(
+						"Invalid postnew: %.17g",
+						postnew
+					);
+
+				}
 
 				// Resize auxiliary vectors if capacity exceeded
 				if (nUniqueVisited >= aux_capacity) {
@@ -231,6 +231,7 @@ SEXP glm_gibbsBVS_grow(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 
 				/* Insert in aux_tree, even if this model won´t be the next step model... */
 				aux_new_loc = nUniqueVisited;
+				// Rprintf ("Inserting in aux_tree in location... %d \n", nUniqueVisited);
 				insert_model_tree (aux_tree, vars, n, model, nUniqueVisited);
 				//INTEGER(aux_modeldim)[nUniqueVisited] = pmodel;
 
@@ -242,33 +243,64 @@ SEXP glm_gibbsBVS_grow(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 			} 
 			else {
 				aux_new_loc = aux_branch->where;
+				// Rprintf ("aux_new_loc: %d \n", aux_new_loc);
 				postnew = REAL(aux_logmarg)[aux_new_loc] + log(REAL(aux_priorprobs)[aux_new_loc]);
+				
 				/* Devia tentar dar print a estes modelos que já foram encontrados; 
 				só para ver se o Gibbs Sampler está a funcionar bem... (aux_modelspace)[aux_new_loc] */
 			}
 
 			/* Check Appendix A of "On Sampling Strategies in BVS Problems with Large Model Spaces" from Gonzalo*/
-            /* If oldcomponent = 0, we have just exp (postnew) in the numerator */
-			/* If oldcomponent = 1, we have just exp (postold) in the numerator */
+            /* If oldcomponent = 0, we have just postnew in the numerator */
+			/* If oldcomponent = 1, we have just postold in the numerator */
 			/* In the numerator we must have "a", i.e., the model with gamma_idx = 1 */
-            ratio = (oldcomponent * (exp (postold) - exp (postnew)) + exp (postnew)) / (exp (postnew) + exp (postold));
-            newcomponent = bernoulli_draw (ratio); // Drawing from the full conditional
+			max_denom = fmax(postnew, postold);
+			log_denom = max_denom + log(exp(postnew - max_denom) + exp(postold - max_denom));
+			log_ratio =	(oldcomponent * (postold - postnew) + postnew) - log_denom;
+			
+			/* Teria de definir ratio = exp(log_ratio)*/
+			if (!isfinite(exp(log_ratio)) || exp(log_ratio) < 0.0 || exp(log_ratio) > 1.0) {
+
+				Rprintf("postold: %.10f\n", postold);
+				Rprintf("postnew: %.10f\n", postnew);
+				Rprintf("oldcomponent: %d\n", oldcomponent);
+				Rprintf("post numerator: %.10f\n", oldcomponent * (postold - postnew) + postnew);
+				Rprintf ("log denom: %.10f\n", log_denom);
+				Rprintf("max post: %.10f\n", max_denom);
+				
+				warning(
+					"Invalid ratio: %.17g",
+					exp(log_ratio)
+				);
+
+				// if (ratio < 0.0) ratio = 0.0;
+				// if (ratio > 1.0) ratio = 1.0;
+
+				// if (!isfinite(ratio))
+				// 	ratio = 0.5;
+			}
+			// Rprintf ("Ratio: %.10f\n", exp(log_ratio)); // in between 0 and 1
+            newcomponent = bernoulli_draw (exp(log_ratio)); // Drawing from the full conditional
 
 			if (newcomponent != oldcomponent) { // Not staying in the current model
-				moved++;
 				aux_old_loc = aux_new_loc;
 				postold = postnew;
+				if (!isfinite(postold)) {
+
+					warning(
+						"Bad assignment: %.17g",
+						postnew
+					);
+
+				}
+
 				memcpy (modelold, model, sizeof(int)*p); // Copying an array of integers from model to modelold
-			} else {
-				stucked++;
-			}
+			} 
 			/* else => staying in the same place at the next step
 			No need to restore modelold, cause that is done at the beginning of the for loop */
 		}
 
 	}
-
-	//Rprintf("Cheguei depois do burnin\n");
 
 	m++; /* m = 1 */
 	/* Main Loop */
@@ -298,8 +330,10 @@ SEXP glm_gibbsBVS_grow(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 
 				/* Next Variable Flip (perm[ind] is always different from intercept_pos) */
 				component    = perm [idx]; // Randomly chosen index (not variable)
-				oldcomponent = model [vars[component].index]; // Before: vars[component].index
-				model [vars[component].index] = 1 - model [vars[component].index]; 
+				// Rprintf("vars[component].index]: %d \n", vars[component].index);
+				oldcomponent = model [vars[component].index]; // Was this chosen variable already in the model or not (1 or 0)
+				// Rprintf ("Already in the model? Y/N %d \n", oldcomponent);
+				model [vars[component].index] = 1 - model [vars[component].index];
 
 				/*  ── Checking if the model was visited already / belongs to the tree ────   */
 				aux_branch = aux_tree;        /* start at the root of the tree                      */
@@ -331,15 +365,25 @@ SEXP glm_gibbsBVS_grow(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 
 					PROTECT (Rmodel_m = allocVector(INTSXP, pmodel)); // pmodel is the number of active variables in the model
 					GetModel_m (Rmodel_m, model, p); // Fill Rmodel_m with indices of active variables
-					//PrintModel_m(Rmodel_m, model, p);
+					// PrintModel_m(Rmodel_m, model, p);
 
 					glm_fit      = PROTECT(glm_FitModel(X, Y, Rmodel_m, Roffset, Rweights, glmfamily,
 														Rcontrol, Rlaplace, betapriorfamily, positions, levels));
 
 					logmarg_m     = REAL(getListElement(getListElement(glm_fit, "lpy"),"lpY"))[0];					
 					prior_m      = compute_prior_probs_MCMC (model, p, modelprior, POS, nofvars, LVL, costs_mat, n_obs);
-					// Rprintf("Prior prob: %.15f \n",prior_m);
 					postnew = logmarg_m + log (prior_m);
+					if (!isfinite(postnew)) {
+
+						Rprintf("logmarg_m: %.17g \n", logmarg_m);
+						Rprintf("log(prior_m): %.17g \n", log (prior_m));
+
+						warning(
+							"Invalid postnew: %.17g",
+							postnew
+						);
+
+					}
 					
 					// Resize auxiliary vectors if capacity exceeded
 					if (nUniqueVisited >= aux_capacity) {
@@ -353,6 +397,7 @@ SEXP glm_gibbsBVS_grow(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 					}
 
 					aux_new_loc = nUniqueVisited;
+					// Rprintf ("Inserting in aux_tree in location... %d \n", nUniqueVisited);
 					insert_model_tree (aux_tree, vars, n, model, nUniqueVisited);
 					//INTEGER(aux_modeldim)[nUniqueVisited] = pmodel;	
 
@@ -363,33 +408,75 @@ SEXP glm_gibbsBVS_grow(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 				} 
 				else {
 					aux_new_loc = aux_branch->where;
+					// Rprintf ("aux_new_loc: %d \n", aux_new_loc);
 					postnew = REAL(aux_logmarg)[aux_new_loc] + log(REAL(aux_priorprobs)[aux_new_loc]);
 				}
 
 				/* Check Appendix A of "On Sampling Strategies in BVS Problems with Large Model Spaces" from Gonzalo*/
-				/* If oldcomponent = 0, we have just exp (postnew) in the numerator */
-				/* If oldcomponent = 1, we have just exp (postold) in the numerator */
+				/* If oldcomponent = 0, we have just postnew in the numerator */
+				/* If oldcomponent = 1, we have just postold in the numerator */
 				/* In the numerator we must have "a", i.e., the model with gamma_idx = 1 */
-				ratio = (oldcomponent * (exp (postold) - exp (postnew)) + exp (postnew)) / (exp (postnew) + exp (postold));
-				newcomponent = bernoulli_draw (ratio); // Drawing from the full conditional
+				max_denom = fmax(postnew, postold);
+				log_denom = max_denom + log(exp(postnew - max_denom) + exp(postold - max_denom));
+				// double postnum;
+				// if (oldcomponent == 1)
+				// 	postnum = postold;
+				// else
+				// 	postnum = postnew;
+				log_ratio =	(oldcomponent * (postold - postnew) + postnew) - log_denom;
+				// Rprintf("post numerator: %.10f\n", oldcomponent * (postold - postnew) + postnew);
+				// Rprintf("max post: %.10f\n", max_denom);
+				// Rprintf("postold: %.10f\n", postold);
+				// Rprintf("postnew: %.10f\n", postnew);
+				/* Teria de definir ratio = exp(log_ratio)*/
+				if (!isfinite(exp(log_ratio)) || exp(log_ratio) < 0.0 || exp(log_ratio) > 1.0) {
+
+					Rprintf("postold: %.10f\n", postold);
+					Rprintf("postnew: %.10f\n", postnew);
+					Rprintf("oldcomponent: %d\n", oldcomponent);
+					Rprintf("post numerator: %.10f\n", oldcomponent * (postold - postnew) + postnew);
+					Rprintf ("log denom: %.10f\n", log_denom);
+					Rprintf("max post: %.10f\n", max_denom);
+				
+					// post numerator: -nan
+					// log denom: -1680.2620397829
+					// max post: -1680.2620397829
+					// postold: -inf
+					// postnew: -1680.2620397829
+
+					warning(
+						"Invalid ratio: %.17g",
+						exp(log_ratio)
+					);
+
+					// if (ratio < 0.0) ratio = 0.0;
+					// if (ratio > 1.0) ratio = 1.0;
+
+					// if (!isfinite(ratio))
+					// 	ratio = 0.5;
+				}
+				// Rprintf ("Ratio: %.10f\n", exp(log_ratio)); // in between 0 and 1
+				newcomponent = bernoulli_draw (exp(log_ratio)); // Drawing from the full conditional
 
 				if (newcomponent != oldcomponent) { 
-					moved++;
 					aux_old_loc = aux_new_loc;
 					postold = postnew;
+					if (!isfinite(postold)) {
+
+						warning(
+							"Bad assignment: %.17g",
+							postnew
+						);
+
+					}
 					memcpy (modelold, model, sizeof(int)*p); // Copying an array of integers from model to modelold
 				
-				} else {
-					stucked++;
-				}
+				} 
 
 			}
 
 			thin_count++;
-			//Rprintf("Finish the idx loop in main Loop at iter: %d thin_count: %d\n", m, thin_count);
 		}
-
-		//Rprintf("Before the output tree, at iter: %d\n", m);
 
 		branch   = tree;        /* start at the root of the tree                      */
 		newmodel = 0;  
@@ -444,6 +531,11 @@ SEXP glm_gibbsBVS_grow(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 			insert_model_tree (tree, vars, n, modelold, nUnique);
 			// INTEGER(modeldim)[nUnique] = pmodel;
 
+			// PROTECT (Rmodel_m = allocVector(INTSXP, pmodel)); // pmodel is the number of active variables in the model
+			// GetModel_m (Rmodel_m, modelold, p); // Fill Rmodel_m with indices of active variables
+			// PrintModel_m(Rmodel_m, modelold, p);
+			// UNPROTECT(1);
+
 			Set_less_Model_gibbs (nUnique,	
 				REAL(aux_logmarg)[aux_old_loc], REAL(aux_priorprobs)[aux_old_loc], 
 				logmarg, priorprobs,
@@ -457,13 +549,8 @@ SEXP glm_gibbsBVS_grow(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 		
 		old_loc = new_loc;	
 		INTEGER (Rcounts)[old_loc] += 1;
-		//Rprintf("After the output tree, at iter: %d\n", m);
-
 		m++;
 	}
-
-	Rprintf("Moved: %d \n", moved);
-	Rprintf("Stucked: %d \n", stucked);
 
 	INTEGER(NumUnique)[0] = nUnique;	
 	Rprintf("NumUnique Models Accepted %d \n", nUnique);

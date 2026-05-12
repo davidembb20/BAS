@@ -200,6 +200,7 @@ SEXP gglm_lpy(SEXP RX, SEXP RY, SEXP Rcoef, SEXP Rmu, SEXP Rdeviance, SEXP Rwts,
   /* Instead of p_M, we now have (rank[1|X_M] - 1) */
   int corrected_p = 0; 
   corrected_p = model_rank (index, all_p, POS, nofvars, LVL); // Correcting this for the oversaturated models...
+  // Rprintf ("corrected_p: %d\n", corrected_p);
   gsl_matrix_free (POS);
   
   /* corrected_p instead of p */

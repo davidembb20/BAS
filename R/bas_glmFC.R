@@ -337,9 +337,6 @@ bas.glmFC <- function(formula, family = binomial(link = "logit"),
   null.deviance <- null.model$null.deviance
   loglik_null <- as.numeric(-0.5 * null.deviance)
  
-
-
-
   if (!is.numeric(initprobs)) {
     if (nobs <= p && initprobs == "eplogp") {
       stop(
@@ -727,6 +724,7 @@ bas.glmFC <- function(formula, family = binomial(link = "logit"),
   #-------
   # David
   #------
+
   result$costs <- var.costs
   result$depvars <- depvars
   result$positions <- positions
@@ -734,11 +732,10 @@ bas.glmFC <- function(formula, family = binomial(link = "logit"),
   result$groups <- groups
 
   df <- rep(nobs - 1, result$n.models)
-
-  # When using this with GibbsBVS, c
+  # Change this part when method == "GibbsBVS" in the call
   if (betaprior$class == "IC") df <- df - result$size + 1
-  
   result$df <- df
+
   result$R2 <- 1.0 - result$deviance/null.deviance
   result$n.vars <- p
   result$Y <- y
@@ -753,6 +750,8 @@ bas.glmFC <- function(formula, family = binomial(link = "logit"),
   # drop null model if it is present
   # if (betaprior$family == "Jeffreys" & (min(result$size) == 1)) result <- .drop.null.bas(result)
   
+  # Até aqui (daqui para cima)
+
   #github issue #74. drop models with zero prior probability
   if (any(result$priorprobs == 0)) {
     drop.models = result$priorprobs != 0
@@ -776,6 +775,9 @@ bas.glmFC <- function(formula, family = binomial(link = "logit"),
     result$deviance = result$deviance[drop.models]
     result$n.models = length(result$postprobs)
   }
+
+  result$LLR_stat <- null.deviance - result$deviance # don´t use this with Gibbs or deterministic.less nor with gamma glm...
+  # cat ("Null deviance: ", null.deviance)
 
   list_models <- result$which
   
@@ -826,11 +828,11 @@ bas.glmFC <- function(formula, family = binomial(link = "logit"),
       models_matrix,
       logmarg = result$logmarg,
       new_priorprobs = new_priorprobs,
-      priorprobs = result$priorprobs, 
+      priorprobs = result$priorprobs,
       model_num = seq_len (nrow(models_matrix)) # Index to keep track of the models
     )
     
-    # Expanding the dataframe for resampling 
+    # Expanding the dataframe for resampling
     #idx_expanded <- rep.int(seq_len(nrow(bvs_df)), times = result$freq) 
     # Contains now repeated models! 
     #expanded_df <- bvs_df [idx_expanded, ] # Care needed when dealing with the freq column
@@ -857,19 +859,16 @@ bas.glmFC <- function(formula, family = binomial(link = "logit"),
      # Odds = Prior Probs Corrected / Prior Probs Wrongly Defined (Original)
     #) 
 
-    #print ("Num unique models before resampling")
-    #print (nrow(models_matrix))
-
     resamp <- sample ( # vector with the indices of the models that were resampled
-     x = seq_len (nrow(models_matrix)),
-     # Number of models to resample (number of MCMC iterations)
-     size = sum (result$freq), 
-     # Allows duplicate models to be selected
-     replace = TRUE,
-     # Importance resampling of model indices
-     prob = result$freq * exp(log(bvs_df$new_priorprobs) - log(bvs_df$priorprobs))
-     # Odds = Frequency * (Prior Probs Corrected / Prior Probs Wrongly Defined (Original))
-    ) 
+      x = seq_len (nrow(models_matrix)),
+      # Number of models to resample (number of MCMC iterations)
+      size = sum (result$freq),
+      # Allows duplicate models to be selected
+      replace = TRUE,
+      # Importance resampling of model indices
+      prob = result$freq * exp(log(bvs_df$new_priorprobs) - log(bvs_df$priorprobs))
+      # Odds = Frequency * (Prior Probs Corrected / Prior Probs Wrongly Defined (Original))
+    )
         
     # Count occurrences of each index
     # (similar to an histogram of the resampling over all rows: indexes as the x-axis and counts as the y-axis)
@@ -912,9 +911,6 @@ bas.glmFC <- function(formula, family = binomial(link = "logit"),
 
     bvs_df_resamp <- bvs_df[count_resamp$index_resampled, ]
     bvs_df_resamp$freq <- count_resamp$count
-
-    #print ("New number of unique models")
-    #print (nrow(bvs_df_resamp))
 
     #bvs_df_resamp <- aux_df %>%
     #  dplyr :: group_by (model_num) %>%
