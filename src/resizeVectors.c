@@ -37,6 +37,7 @@ SEXP resizeVector(SEXP x, R_xlen_t len_new)
   {
     R_xlen_t lenx, i;
     SEXP rval, names, xnames, t;
+    /* Pointers */
     int *ival;
     double *dval;
     
@@ -60,16 +61,16 @@ switch (TYPEOF(x)) {
   case LGLSXP:
   case INTSXP:
     ival = INTEGER(rval);
-    if (lenx < len_new) // fill rest with NAs
+    if (lenx < len_new) // fill rest with 0´s
       for (i = lenx; i < len_new; i++) {
-        INTEGER(rval)[i] = NA_INTEGER;
+        INTEGER(rval)[i] = 0;
         }
     memcpy(ival, INTEGER(x), fmin2(len_new,lenx) * sizeof(int));
     break;
   case REALSXP:
     dval = REAL(rval);
     if (lenx < len_new) // fill rest with NAs
-      for (i = len_new; i < lenx; i++) {
+      for (i = lenx; i < len_new; i++) {
         REAL(rval)[i] = NA_REAL;
         }
     memcpy(dval, REAL(x), fmin2(len_new,lenx) * sizeof(double));

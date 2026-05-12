@@ -645,7 +645,7 @@ void Set_less_Model_gibbs (int m,
   SEXP logmarg, SEXP priorprobs,
   SEXP modelspace_m, SEXP modelspace) {
   
-REAL(logmarg)[m]     = logmargy;
+REAL(logmarg)[m]    = logmargy;
 REAL(priorprobs)[m] = prior_m;
 SET_VECTOR_ELT(modelspace, m, modelspace_m);
 
