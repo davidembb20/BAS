@@ -831,33 +831,6 @@ bas.glmFC <- function(formula, family = binomial(link = "logit"),
       priorprobs = result$priorprobs,
       model_num = seq_len (nrow(models_matrix)) # Index to keep track of the models
     )
-    
-    # Expanding the dataframe for resampling
-    #idx_expanded <- rep.int(seq_len(nrow(bvs_df)), times = result$freq) 
-    # Contains now repeated models! 
-    #expanded_df <- bvs_df [idx_expanded, ] # Care needed when dealing with the freq column
-
-    #if (length(idx_expanded) - sum (result$freq) != 0 | nrow (expanded_df) - sum (result$freq) != 0)
-    #  warning("error in resampling")
-    
-    # A questão agora é mesmo: modelos que foram visitados mais vezes, deviam ser mais prováveis de serem resampled:
-    # se não dissermos que eles são iguais, garantimos isso fazendo com que apareçam mais vezes como candidatos,
-    # uma vez que expandi o dataframe? Sim, porque há mais indíces no expanded_df correspondentes a esse modelo
-    
-    # Would it be equivalent multiplying the prob argument in the sample function by freq?
-    # We would then change X for seq_len (nrow(bvs_df))? Size would still need to be the same
-    # , so we could still define posterior model probabilities according to Monte Carlo
-    
-    #resamp <- sample ( # vector with the indices of the models to be resampled
-    # x = seq_len (nrow(expanded_df)),
-     # Number of models to resample (number of MCMC iterations)
-    # size = nrow(expanded_df), 
-     # Allows duplicate models to be selected
-    # replace = TRUE,
-     # Importance resampling of model indices
-    # prob = expanded_df$new_priorprobs / expanded_df$priorprobs 
-     # Odds = Prior Probs Corrected / Prior Probs Wrongly Defined (Original)
-    #) 
 
     resamp <- sample ( # vector with the indices of the models that were resampled
       x = seq_len (nrow(models_matrix)),
@@ -869,61 +842,17 @@ bas.glmFC <- function(formula, family = binomial(link = "logit"),
       prob = result$freq * exp(log(bvs_df$new_priorprobs) - log(bvs_df$priorprobs))
       # Odds = Frequency * (Prior Probs Corrected / Prior Probs Wrongly Defined (Original))
     )
-        
-    # Count occurrences of each index
-    # (similar to an histogram of the resampling over all rows: indexes as the x-axis and counts as the y-axis)
-    #draw_counts <- tabulate (resamp, nbins = nrow(expanded_df))
-    
-    # new_freq <- as.numeric (rowsum (draw_counts, group = resampled_df$model_num, reorder = FALSE)) (before)
-    # collapse the counts by the original model number
-    #freq_by_model <- rowsum (draw_counts, # rowsum() returns a 1-col matrix
-    #                         group   = expanded_df$model_num,
-    #                         reorder = FALSE)
-    
-    # Model numbers should be integer (not character)
-    #model_ids <- as.integer(rownames(freq_by_model))
-    
-    # keep only the models that actually appeared in the resample
-    #nonzero <- freq_by_model [, 1] > 0
-    #bvs_df_resamp <- bvs_df [model_ids [nonzero], ]
-
-    # Updating the freq column (safe indexing — aligned by construction)
-    #bvs_df_resamp$freq <- freq_by_model [nonzero, 1] # Number of times each unique model was drawn in the resampling process
-    # Update result object with resampled values
-
-    #resampled_df <- expanded_df [resamp, ]
-    # resampled_df$model_num maps every expanded row (after resampling) back to the unique model
-    #unique_model_num <- unique (resampled_df$model_num)
-    #models_matrix <- models_matrix [unique_model_num, , drop = FALSE]
-
-    #result$old_ratio <- result$n.Unique / (2 ^ (p - 1)) # The denominator includes repeated models
-    # We´re treating numerical variables as if they were categorical variables with two levels...
-    #levels <- pmax (rowSums (positions), 2)
-    #result$new_ratio <- nrow (bvs_df_resamp) / prod ((2 ^ levels) - levels) # The denominator portraits the real number of competing models
 
     count_resamp <- as.data.frame (table(resamp))  
     colnames (count_resamp) <- c ("index_resampled", "count")
     count_resamp$index_resampled <- as.numeric(as.character(count_resamp$index_resampled))
     
-    # Some of the indices in aux_df belong to the same model_num.
-    #aux_df <- expanded_df[count_resamp$index_resampled, ]
-    #aux_df$freq <- count_resamp$count
-
     bvs_df_resamp <- bvs_df[count_resamp$index_resampled, ]
     bvs_df_resamp$freq <- count_resamp$count
 
-    #bvs_df_resamp <- aux_df %>%
-    #  dplyr :: group_by (model_num) %>%
-    #  dplyr :: summarise (
-    #    freq = sum(freq),
-    #    dplyr :: across(-freq, first),   # take first value of all other columns
-    #    .groups = "drop"
-    #)       
-    
     result$n.models <- nrow (bvs_df_resamp) # New number of unique models
     
-    models_matrix <- models_matrix [bvs_df_resamp$model_num, , drop = FALSE] # Seems a safer option
-    #models_matrix <- bvs_df_resamp$model.matrix # might have problems with drop? dunno...
+    models_matrix <- models_matrix [bvs_df_resamp$model_num, , drop = FALSE] 
     result$size <- rowSums (models_matrix) 
     result$freq <- bvs_df_resamp$freq # Or directly, count_resamp$count
     result$logmarg <- bvs_df_resamp$logmarg
@@ -934,13 +863,6 @@ bas.glmFC <- function(formula, family = binomial(link = "logit"),
     result$postprobs.MCMC <- result$freq / sum(result$freq) # freq is the number of times each model after resampling
     # PIPs for the variables in each model (at the level of the levels)
     result$probne0.MCMC <- apply(models_matrix, 2, function(col) sum(col * result$freq) / sum(result$freq))
-    
-    # Wrong: colSums (models_matrix * result$freq) / sum (result$freq)
-    # Old: apply(models_matrix, 2, function(col) sum(col * result$freq) / sum(result$freq))
-
-    # Keep in mind that resampled_df is the expanded dataframe (colMeans without weight is fine...)
-    #result$probne0.MCMC <- colMeans (resampled_df [, c(1:p), drop = FALSE]) # Must include the intercept  
-    
     result$postprobs.RN <- compute_posterior (result$logmarg, result$priorprobs)
     result$probne0.RN <- setNames(
       as.vector(result$postprobs.RN %*% models_matrix[, -1, drop = FALSE]), 
@@ -953,10 +875,6 @@ bas.glmFC <- function(formula, family = binomial(link = "logit"),
       result$postprobs <- result$postprobs.MCMC #  empirical posterior model probabilities, computed as relative frequencies.
     }
   }
-
-  # models_w_logmarg <- cbind (models_matrix, bvs_df_resamp$logmarg)
-  # Matrix with the binary representation of the models and the log marginal likelihood of each model
-  # colnames(models_w_logmarg) <- c(namesx, "logmarg") 
   
   # Trying to identify the Null Model index (sometimes it is not the first model to be enumerated)
   only_zero <- sapply(list_models, function(x) length(x) == 1 && x == 0)

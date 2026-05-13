@@ -18,7 +18,7 @@ SEXP glm_gibbsBVS_grow(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 	// int nModels = nModels0;
 	int nModels = INTEGER(RnModels)[0];  // initial guess on number of models to return
 	double expand = REAL(Rexpand)[0]; // increase to grow vectors  
-	
+
 	int nProtected = 0;
 	
    /* ----------------------------------------------------------------
@@ -58,7 +58,7 @@ SEXP glm_gibbsBVS_grow(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 	
 	setAttrib(ANS, R_NamesSymbol, ANS_names);
 
-	SEXP modeldim =  allocVector(INTSXP, nModels); // Before: nModels
+	SEXP modeldim =  allocVector(INTSXP, 1); // Before: nModels
 	memset(INTEGER(modeldim), 0, 1 * sizeof(int)); // Before: nModels
 
 	int p = INTEGER(getAttrib(X,R_DimSymbol))[1];
@@ -84,10 +84,18 @@ SEXP glm_gibbsBVS_grow(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 	   When I visit a previously visit model, I´ll use the marginal likelihood value stored in aux_tree. */
 	int aux_capacity = nModels * n; /* Previously: one model per variable flip: (burnin + mcmc_size) * (n) */
 	// Stuff for the auxiliary tree
-	SEXP aux_priorprobs  = PROTECT(allocVector(REALSXP, aux_capacity)); ++nProtected; 
-	SEXP aux_logmarg     = PROTECT(allocVector(REALSXP, aux_capacity)); ++nProtected;
-	SEXP aux_modeldim 	 = PROTECT(allocVector(INTSXP,  1)); ++nProtected; // Before: aux_capacity
-	SEXP aux_modelspace  = PROTECT(allocVector(VECSXP,  aux_capacity)); ++nProtected;
+	SEXP AUX = PROTECT(allocVector(VECSXP, 3)); ++nProtected;
+
+	SEXP aux_priorprobs = allocVector(REALSXP, aux_capacity);
+	SET_VECTOR_ELT(AUX, 0, aux_priorprobs);	
+
+	SEXP aux_logmarg = allocVector(REALSXP, aux_capacity);
+	SET_VECTOR_ELT(AUX, 1, aux_logmarg);
+
+	SEXP aux_modelspace = allocVector(VECSXP,  aux_capacity);
+	SET_VECTOR_ELT(AUX, 2, aux_modelspace);
+
+	SEXP aux_modeldim = PROTECT(allocVector(INTSXP, 1)); ++nProtected; // Before: aux_capacity
 
 	// fill in the sure things
 	int *model = ivecalloc(p);
@@ -206,28 +214,6 @@ SEXP glm_gibbsBVS_grow(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 				logmarg_m = REAL(getListElement(getListElement(glm_fit, "lpy"),"lpY"))[0];
 				prior_m = compute_prior_probs_MCMC (model, p, modelprior, POS, nofvars, LVL, costs_mat, n_obs);
 				postnew = logmarg_m + log (prior_m);
-				if (!isfinite(postnew)) {
-
-					Rprintf("logmarg_m: %.17g \n", logmarg_m);
-					Rprintf("log(prior_m): %.17g \n", log (prior_m));
-
-					warning(
-						"Invalid postnew: %.17g",
-						postnew
-					);
-
-				}
-
-				// Resize auxiliary vectors if capacity exceeded
-				if (nUniqueVisited >= aux_capacity) {
-					Rprintf ("Entrei no expand durante o burnin");
-					aux_capacity   = (int)(expand * aux_capacity);
-					
-					aux_priorprobs = resizeVector(aux_priorprobs, aux_capacity);
-					aux_logmarg    = resizeVector(aux_logmarg, aux_capacity);
-					//aux_modeldim   = resizeVector(aux_modeldim, aux_capacity);
-					aux_modelspace = resizeVector(aux_modelspace, aux_capacity);
-				}
 
 				/* Insert in aux_tree, even if this model won´t be the next step model... */
 				aux_new_loc = nUniqueVisited;
@@ -240,14 +226,27 @@ SEXP glm_gibbsBVS_grow(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 
 				UNPROTECT(2);
 
+				// Resize auxiliary vectors if capacity exceeded
+				if (nUniqueVisited >= aux_capacity) {
+					aux_capacity   = (int)(expand * aux_capacity);
+			
+					aux_priorprobs = resizeVector(aux_priorprobs, aux_capacity);
+					SET_VECTOR_ELT(AUX, 0, aux_priorprobs);
+
+					aux_logmarg = resizeVector(aux_logmarg, aux_capacity);
+					SET_VECTOR_ELT(AUX, 1, aux_logmarg);
+
+					aux_modelspace = resizeVector(aux_modelspace, aux_capacity);
+					SET_VECTOR_ELT(AUX, 2, aux_modelspace);
+
+					/* If this is added in the future, need to include aux_modeldim in AUX list...*/
+					//aux_modeldim   = resizeVector(aux_modeldim, aux_capacity);
+				}
+
 			} 
 			else {
 				aux_new_loc = aux_branch->where;
-				// Rprintf ("aux_new_loc: %d \n", aux_new_loc);
 				postnew = REAL(aux_logmarg)[aux_new_loc] + log(REAL(aux_priorprobs)[aux_new_loc]);
-				
-				/* Devia tentar dar print a estes modelos que já foram encontrados; 
-				só para ver se o Gibbs Sampler está a funcionar bem... (aux_modelspace)[aux_new_loc] */
 			}
 
 			/* Check Appendix A of "On Sampling Strategies in BVS Problems with Large Model Spaces" from Gonzalo*/
@@ -257,43 +256,11 @@ SEXP glm_gibbsBVS_grow(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 			max_denom = fmax(postnew, postold);
 			log_denom = max_denom + log(exp(postnew - max_denom) + exp(postold - max_denom));
 			log_ratio =	(oldcomponent * (postold - postnew) + postnew) - log_denom;
-			
-			/* Teria de definir ratio = exp(log_ratio)*/
-			if (!isfinite(exp(log_ratio)) || exp(log_ratio) < 0.0 || exp(log_ratio) > 1.0) {
-
-				Rprintf("postold: %.10f\n", postold);
-				Rprintf("postnew: %.10f\n", postnew);
-				Rprintf("oldcomponent: %d\n", oldcomponent);
-				Rprintf("post numerator: %.10f\n", oldcomponent * (postold - postnew) + postnew);
-				Rprintf ("log denom: %.10f\n", log_denom);
-				Rprintf("max post: %.10f\n", max_denom);
-				
-				warning(
-					"Invalid ratio: %.17g",
-					exp(log_ratio)
-				);
-
-				// if (ratio < 0.0) ratio = 0.0;
-				// if (ratio > 1.0) ratio = 1.0;
-
-				// if (!isfinite(ratio))
-				// 	ratio = 0.5;
-			}
-			// Rprintf ("Ratio: %.10f\n", exp(log_ratio)); // in between 0 and 1
             newcomponent = bernoulli_draw (exp(log_ratio)); // Drawing from the full conditional
 
 			if (newcomponent != oldcomponent) { // Not staying in the current model
 				aux_old_loc = aux_new_loc;
 				postold = postnew;
-				if (!isfinite(postold)) {
-
-					warning(
-						"Bad assignment: %.17g",
-						postnew
-					);
-
-				}
-
 				memcpy (modelold, model, sizeof(int)*p); // Copying an array of integers from model to modelold
 			} 
 			/* else => staying in the same place at the next step
@@ -373,29 +340,7 @@ SEXP glm_gibbsBVS_grow(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 					logmarg_m     = REAL(getListElement(getListElement(glm_fit, "lpy"),"lpY"))[0];					
 					prior_m      = compute_prior_probs_MCMC (model, p, modelprior, POS, nofvars, LVL, costs_mat, n_obs);
 					postnew = logmarg_m + log (prior_m);
-					if (!isfinite(postnew)) {
-
-						Rprintf("logmarg_m: %.17g \n", logmarg_m);
-						Rprintf("log(prior_m): %.17g \n", log (prior_m));
-
-						warning(
-							"Invalid postnew: %.17g",
-							postnew
-						);
-
-					}
 					
-					// Resize auxiliary vectors if capacity exceeded
-					if (nUniqueVisited >= aux_capacity) {
-						Rprintf("Entrei no loop para expandir aux_capacity"); 
-						aux_capacity   = (int)(expand * aux_capacity);
-
-						aux_priorprobs = resizeVector(aux_priorprobs, aux_capacity);
-						aux_logmarg    = resizeVector(aux_logmarg, aux_capacity);
-						//aux_modeldim   = resizeVector(aux_modeldim, aux_capacity);
-						aux_modelspace = resizeVector(aux_modelspace, aux_capacity);
-					}
-
 					aux_new_loc = nUniqueVisited;
 					// Rprintf ("Inserting in aux_tree in location... %d \n", nUniqueVisited);
 					insert_model_tree (aux_tree, vars, n, model, nUniqueVisited);
@@ -405,8 +350,25 @@ SEXP glm_gibbsBVS_grow(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 					++nUniqueVisited;
 
 					UNPROTECT(2);
-				} 
-				else {
+
+					// Resize auxiliary vectors if capacity exceeded
+					if (nUniqueVisited >= aux_capacity) {
+						aux_capacity   = (int)(expand * aux_capacity);
+
+						aux_priorprobs = resizeVector(aux_priorprobs, aux_capacity);
+						SET_VECTOR_ELT(AUX, 0, aux_priorprobs);
+
+						aux_logmarg = resizeVector(aux_logmarg, aux_capacity);
+						SET_VECTOR_ELT(AUX, 1, aux_logmarg);
+
+						aux_modelspace = resizeVector(aux_modelspace, aux_capacity);
+						SET_VECTOR_ELT(AUX, 2, aux_modelspace);
+
+						/* If this is added in the future, need to include aux_modeldim in AUX list...*/
+						//aux_modeldim   = resizeVector(aux_modeldim, aux_capacity);
+					}
+				
+				} else {
 					aux_new_loc = aux_branch->where;
 					// Rprintf ("aux_new_loc: %d \n", aux_new_loc);
 					postnew = REAL(aux_logmarg)[aux_new_loc] + log(REAL(aux_priorprobs)[aux_new_loc]);
@@ -424,53 +386,13 @@ SEXP glm_gibbsBVS_grow(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 				// else
 				// 	postnum = postnew;
 				log_ratio =	(oldcomponent * (postold - postnew) + postnew) - log_denom;
-				// Rprintf("post numerator: %.10f\n", oldcomponent * (postold - postnew) + postnew);
-				// Rprintf("max post: %.10f\n", max_denom);
-				// Rprintf("postold: %.10f\n", postold);
-				// Rprintf("postnew: %.10f\n", postnew);
-				/* Teria de definir ratio = exp(log_ratio)*/
-				if (!isfinite(exp(log_ratio)) || exp(log_ratio) < 0.0 || exp(log_ratio) > 1.0) {
 
-					Rprintf("postold: %.10f\n", postold);
-					Rprintf("postnew: %.10f\n", postnew);
-					Rprintf("oldcomponent: %d\n", oldcomponent);
-					Rprintf("post numerator: %.10f\n", oldcomponent * (postold - postnew) + postnew);
-					Rprintf ("log denom: %.10f\n", log_denom);
-					Rprintf("max post: %.10f\n", max_denom);
-				
-					// post numerator: -nan
-					// log denom: -1680.2620397829
-					// max post: -1680.2620397829
-					// postold: -inf
-					// postnew: -1680.2620397829
-
-					warning(
-						"Invalid ratio: %.17g",
-						exp(log_ratio)
-					);
-
-					// if (ratio < 0.0) ratio = 0.0;
-					// if (ratio > 1.0) ratio = 1.0;
-
-					// if (!isfinite(ratio))
-					// 	ratio = 0.5;
-				}
-				// Rprintf ("Ratio: %.10f\n", exp(log_ratio)); // in between 0 and 1
 				newcomponent = bernoulli_draw (exp(log_ratio)); // Drawing from the full conditional
 
 				if (newcomponent != oldcomponent) { 
 					aux_old_loc = aux_new_loc;
 					postold = postnew;
-					if (!isfinite(postold)) {
-
-						warning(
-							"Bad assignment: %.17g",
-							postnew
-						);
-
-					}
 					memcpy (modelold, model, sizeof(int)*p); // Copying an array of integers from model to modelold
-				
 				} 
 
 			}
@@ -505,27 +427,6 @@ SEXP glm_gibbsBVS_grow(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 
 		if (newmodel == 1) {
 			
-			if (nUnique >= nModels && m < mcmc_size){
-
-				Rprintf("Entrei no loop para expandir nModels"); 
-				// expand nModels and grow result vectors
-				nModels = (int) (expand*nModels); //add checks to ensure it is not above max int
-				
-				modelspace = resizeVector(modelspace, nModels);
-				SET_VECTOR_ELT(ANS, 0, modelspace);
-				
-				logmarg = resizeVector(logmarg, nModels);
-				SET_VECTOR_ELT(ANS, 1, logmarg);
-								
-				priorprobs = resizeVector(priorprobs, nModels);
-				SET_VECTOR_ELT(ANS, 2, priorprobs);
-											
-				Rcounts = resizeVector(Rcounts, nModels);
-				SET_VECTOR_ELT(ANS, 3, Rcounts); 
-
-				//modeldim = resizeVector(modeldim, nModels);
-			}
-
 			new_loc = nUnique;
 			/* Any model in tree belongs also to aux_tree*/
 			insert_model_tree (tree, vars, n, modelold, nUnique);
@@ -542,6 +443,25 @@ SEXP glm_gibbsBVS_grow(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 				VECTOR_ELT(aux_modelspace, aux_old_loc), modelspace); 
 			++nUnique;
 
+			if (nUnique >= nModels && m < mcmc_size){
+
+				nModels = (int) (expand*nModels); //add checks to ensure it is not above max int
+							
+				modelspace = resizeVector(modelspace, nModels);
+				SET_VECTOR_ELT(ANS, 0, modelspace);
+
+				logmarg = resizeVector(logmarg, nModels);
+				SET_VECTOR_ELT(ANS, 1, logmarg);
+								
+				priorprobs = resizeVector(priorprobs, nModels);
+				SET_VECTOR_ELT(ANS, 2, priorprobs);
+											
+				Rcounts = resizeVector(Rcounts, nModels);
+				SET_VECTOR_ELT(ANS, 3, Rcounts);
+
+				//modeldim = resizeVector(modeldim, nModels);
+			}
+
 		} 
 		else {
 			new_loc = branch->where;
@@ -550,10 +470,12 @@ SEXP glm_gibbsBVS_grow(SEXP Y, SEXP X, SEXP Roffset, SEXP Rweights,
 		old_loc = new_loc;	
 		INTEGER (Rcounts)[old_loc] += 1;
 		m++;
-	}
 
+		}
+	
 	INTEGER(NumUnique)[0] = nUnique;	
 	Rprintf("NumUnique Models Accepted %d \n", nUnique);
+	Rprintf("nModels %d \n", nModels);
 
 	//	Rprintf("Decreasing nModels %d to number of unique models accepted %d \n", nModels, nUnique);
 	if (nUnique < nModels) {
